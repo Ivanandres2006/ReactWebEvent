@@ -17,10 +17,12 @@ export default function App() {
 // ✨ Coming Soon Home Page
 function Home() {
   return (
-    <div className="min-h-screen bg-black text-[#eed50a] flex items-center justify-center flex-col">
-      <h1 className="text-3xl sm:text-4xl md:text-5xl font-bold mb-4 text-center">
-        WKND Events Coming Soon<span className="animate-dots" />
+    <div className="min-h-screen flex items-center justify-center bg-[#0a0a23]">
+      <h1 className="text-4xl font-bold text-[#eed50a] animate-pulse">
+        WKND Event coming soon<span className="animate-dots"></span>
       </h1>
     </div>
-  )
+  );
 }
+
+
