@@ -67,4 +67,38 @@ button:focus-visible {
   }
 }
 
+@keyframes dots {
+  0%, 20% {
+    content: '';
+  }
+  40% {
+    content: '.';
+  }
+  60% {
+    content: '..';
+  }
+  80%, 100% {
+    content: '...';
+  }
+}
+
+.animate-dots::after {
+  display: inline-block;
+  animation: dots 1.5s steps(4, end) infinite;
+  content: '';
+}
+
+/* Optional: center and style home container */
+.home-container {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  background-color: black;
+  color: #eed50a;
+  text-align: center;
+}
+
+
 
