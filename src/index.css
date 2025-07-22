@@ -65,6 +65,18 @@ button:focus-visible {
   }
 }
 
+.home-container {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  background-color: #0a0a23;
+  color: #eed50a;
+  text-align: center;
+}
+
+
 @keyframes dots {
   0%, 20% {
     content: '';
