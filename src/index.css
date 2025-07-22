@@ -199,6 +199,14 @@ button:focus-visible {
   animation: fade-in 0.8s ease-out;
 }
 
+.waitlist-error {
+  color: #f87171;
+  font-size: 1.1rem;
+  margin-top: 1rem;
+  text-align: center;
+  animation: fade-in 0.8s ease-out;
+}
+
 /* Animation helpers */
 @keyframes fade-in {
   from { opacity: 0; transform: translateY(10px); }

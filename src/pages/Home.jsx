@@ -4,12 +4,12 @@ export default function Home() {
   const [email, setEmail] = useState('')
   const [submitted, setSubmitted] = useState(false)
   const [loading, setLoading] = useState(false)
-  const [message, setMessage] = useState('') // ✅ new
+  const [message, setMessage] = useState('')
 
   const handleSubmit = async (e) => {
     e.preventDefault()
     setLoading(true)
-    setMessage('') // clear any previous messages
+    setMessage('')
 
     try {
       const response = await fetch("https://backendevent-etce.onrender.com/api/waitlist", {
@@ -34,18 +34,15 @@ export default function Home() {
 
   return (
     <div className="home-container px-4">
-      <h1 className="text-4xl md:text-5xl font-bold text-[#eed50a] animate-pulse text-center mb-10">
+      <h1 className="coming-soon-heading">
         WKND coming soon<span className="animate-dots"></span>
       </h1>
 
-      {!submitted && (
-        <form
-          onSubmit={handleSubmit}
-          className="bg-[#111] p-6 rounded-2xl shadow-xl w-full max-w-md flex flex-col gap-4"
-        >
+      {!submitted ? (
+        <form onSubmit={handleSubmit} className="waitlist-form">
           <input
             type="email"
-            placeholder="you@example.com"
+            placeholder="Email"
             value={email}
             required
             onChange={(e) => setEmail(e.target.value)}
@@ -59,11 +56,10 @@ export default function Home() {
             {loading ? "Joining..." : "Notify Me"}
           </button>
         </form>
-      )}
+      ) : null}
 
-      {/* ✅ Show message */}
       {message && (
-        <p className={`text-center text-sm mt-4 ${submitted ? 'text-green-400' : 'text-red-400'}`}>
+        <p className={submitted ? "waitlist-success" : "waitlist-error"}>
           {message}
         </p>
       )}
