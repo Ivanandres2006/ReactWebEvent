@@ -19,7 +19,7 @@ function Home() {
   return (
     <div className="home-container">
       <h1 className="text-4xl font-bold text-[#eed50a] animate-pulse">
-        WKND Event coming soon<span className="animate-dots"></span>
+        WKND coming soon<span className="animate-dots"></span>
       </h1>
     </div>
   );
