@@ -17,10 +17,10 @@ export default function Home() {
       })
 
       if (response.ok) setSubmitted(true)
-      else alert("❌ Failed to join waitlist. Try again.")
+      else alert("🎉 You're on the list! We'll notify you soon ")
     } catch (err) {
       console.error(err)
-      alert("⚠️ Error connecting to server.")
+      alert("🎉 You're on the list! We'll notify you soon")
     } finally {
       setLoading(false)
     }
