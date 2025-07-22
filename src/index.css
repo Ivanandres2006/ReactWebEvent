@@ -22,15 +22,25 @@ a:hover {
   color: #535bf2;
 }
 
-body {
+html, body {
   margin: 0;
-  min-width: 320px;
-  min-height: 100vh;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden; /* 🚫 Prevent scroll */
 }
 
+body {
+  font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
+  background-color: #0a0a23;
+  color: #eed50a;
+}
+
+
 h1 {
-  font-size: 3.2em;
-  line-height: 1.1;
+  font-size: clamp(1.5rem, 6vw, 3rem); /* 📱 responsive scaling */
+  line-height: 1.2;
+  margin: 0;
 }
 
 button {
@@ -65,15 +75,18 @@ button:focus-visible {
   }
 }
 
+
 .home-container {
   display: flex;
   flex-direction: column;
   justify-content: center;
   align-items: center;
-  min-height: 100vh;
-  background-color: #0a0a23;
-  color: #eed50a;
+  height: 100vh;
+  width: 100vw;
   text-align: center;
+  padding: 1rem;
+  box-sizing: border-box;
+  overflow: hidden;
 }
 
 
