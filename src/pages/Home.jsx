@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 
 export default function Home() {
   const [email, setEmail] = useState('')
@@ -32,13 +32,23 @@ export default function Home() {
     }
   }
 
+  // ✅ Auto fade out message after 4 seconds
+  useEffect(() => {
+    if (message) {
+      const timer = setTimeout(() => {
+        setMessage('')
+      }, 4000)
+      return () => clearTimeout(timer)
+    }
+  }, [message])
+
   return (
     <div className="home-container px-4">
       <h1 className="coming-soon-heading">
         WKND coming soon<span className="animate-dots"></span>
       </h1>
 
-      {!submitted ? (
+      {!submitted && (
         <form onSubmit={handleSubmit} className="waitlist-form">
           <input
             type="email"
@@ -56,10 +66,10 @@ export default function Home() {
             {loading ? "Joining..." : "Notify Me"}
           </button>
         </form>
-      ) : null}
+      )}
 
       {message && (
-        <p className={submitted ? "waitlist-success" : "waitlist-error"}>
+        <p className={submitted ? "waitlist-success fade-out" : "waitlist-error fade-out"}>
           {message}
         </p>
       )}

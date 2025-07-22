@@ -75,18 +75,41 @@ button:focus-visible {
   }
 }
 
+@media (max-width: 480px) {
+  .home-container {
+    justify-content: start;           /* ✅ Push content a bit higher */
+    padding-top: 6vh;                 /* ✅ top spacing only */
+  }
+
+  .coming-soon-heading {
+    font-size: 1.8rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .waitlist-form {
+    padding: 1.25rem;
+    max-width: 90vw;
+  }
+
+  .waitlist-input,
+  .waitlist-button {
+    font-size: 1rem;
+    padding: 0.7rem 1rem;
+  }
+}
+
 
 .home-container {
   display: flex;
   flex-direction: column;
   justify-content: center;
   align-items: center;
-  height: 100vh;
-  width: 100vw;
-  text-align: center;
-  padding: 1rem;
+  min-height: 100vh;
+  padding: 2rem 1rem; /* add padding */
   box-sizing: border-box;
-  overflow: hidden;
+  background-color: black;
+  color: #eed50a;
+  text-align: center;
 }
 
 
@@ -207,8 +230,15 @@ button:focus-visible {
   animation: fade-in 0.8s ease-out;
 }
 
-/* Animation helpers */
+.fade-out {
+  animation: fade-in 0.8s ease-out, fade-away 0.8s ease-in 3.2s forwards;
+}
+
 @keyframes fade-in {
-  from { opacity: 0; transform: translateY(10px); }
-  to { opacity: 1; transform: translateY(0); }
+  from { opacity: 0; transform: translateY(5px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fade-away {
+  to { opacity: 0; transform: translateY(-5px); }
 }
