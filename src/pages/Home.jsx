@@ -32,7 +32,6 @@ export default function Home() {
     }
   }
 
-  // ✅ Auto fade out message after 4 seconds
   useEffect(() => {
     if (message) {
       const timer = setTimeout(() => {
@@ -48,11 +47,16 @@ export default function Home() {
         WKND coming soon<span className="animate-dots"></span>
       </h1>
 
+      {/* ✅ New subtitle */}
+      <p className="waitlist-subtitle">
+  Drop your email and be the first to know when WKND launches.
+</p>
+
       {!submitted && (
         <form onSubmit={handleSubmit} className="waitlist-form">
           <input
             type="email"
-            placeholder="Email"
+            placeholder="Your email"
             value={email}
             required
             onChange={(e) => setEmail(e.target.value)}
