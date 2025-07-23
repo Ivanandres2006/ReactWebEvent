@@ -13,6 +13,11 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+
 a {
   font-weight: 500;
   color: #646cff;
@@ -78,7 +83,7 @@ button:focus-visible {
 @media (max-width: 480px) {
   .home-container {
     justify-content: center;
-    padding: 1rem;
+    padding: 1rem 0.5rem;
   }
 
   .coming-soon-heading {
@@ -92,16 +97,11 @@ button:focus-visible {
     gap: 0.8rem;
   }
 
-  .waitlist-input {
-    width: 85vw;
-    font-size: 0.95rem;
-    padding: 0.6rem 0.9rem;
-  }
-
+  .waitlist-input,
   .waitlist-button {
-    width: 85vw;
+    width: 100% !important; /* override any fixed width */
     font-size: 0.95rem;
-    padding: 0.6rem 0.9rem;
+    padding: 0.55rem 0.9rem;
   }
 }
 
