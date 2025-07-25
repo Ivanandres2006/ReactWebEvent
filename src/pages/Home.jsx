@@ -48,7 +48,7 @@ export default function Home() {
       </h1>
 
       {/* ✅ New subtitle */}
-      <p className="waitlist-subtitle">
+      <p className="waitlist-subtitle fade-out">
   Drop your email and be the first to know when WKND launches.
 </p>
 
