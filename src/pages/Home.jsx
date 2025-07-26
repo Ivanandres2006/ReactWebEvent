@@ -5,6 +5,7 @@ export default function Home() {
   const [submitted, setSubmitted] = useState(false)
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState('')
+  const [showInstagramPopup, setShowInstagramPopup] = useState(false)
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -41,19 +42,40 @@ export default function Home() {
     }
   }, [message])
 
+  useEffect(() => {
+    const ua = navigator.userAgent.toLowerCase()
+    if (ua.includes("instagram")) {
+      setShowInstagramPopup(true)
+    }
+  }, [])
+
   return (
     <div className="home-container px-4">
+      {/* Instagram Popup */}
+      {showInstagramPopup && (
+        <div className="instagram-popup-overlay">
+          <div className="instagram-popup">
+            <h2>⚠️ Trouble Using the Form?</h2>
+            <p>
+              Instagram’s in-app browser may block this page. Tap the <strong>••• menu</strong> (top-right) and choose <strong>“Open in Browser”</strong> (Safari or Chrome).
+            </p>
+            <p style={{ fontStyle: 'italic', marginTop: '1rem' }}>– The WKND Team</p>
+            <button onClick={() => setShowInstagramPopup(false)} className="popup-close">
+              Got it
+            </button>
+          </div>
+        </div>
+      )}
+
       <h1 className="coming-soon-heading">
         WKND coming soon<span className="animate-dots"></span>
       </h1>
 
-      {/* ✅ New subtitle */}
       {!submitted && (
-  <p className="waitlist-subtitle">
-    Drop your email and be the first to know when WKND launches.
-  </p>
-)}
-
+        <p className="waitlist-subtitle">
+          Drop your email and be the first to know when WKND launches.
+        </p>
+      )}
 
       {!submitted && (
         <form onSubmit={handleSubmit} className="waitlist-form">
