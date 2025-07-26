@@ -202,6 +202,7 @@ button:focus-visible {
   max-width: 90%;
   text-align: center;
   line-height: 1.4;
+  animation: fade-in 0.8s ease-out;
 }
 
 
