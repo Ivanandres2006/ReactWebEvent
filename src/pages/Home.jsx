@@ -48,9 +48,12 @@ export default function Home() {
       </h1>
 
       {/* ✅ New subtitle */}
-      <p className="waitlist-subtitle">
-  Drop your email and be the first to know when WKND launches.
-</p>
+      {!submitted && (
+  <p className="waitlist-subtitle">
+    Drop your email and be the first to know when WKND launches.
+  </p>
+)}
+
 
       {!submitted && (
         <form onSubmit={handleSubmit} className="waitlist-form">
