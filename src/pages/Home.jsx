@@ -7,31 +7,48 @@ export default function Home() {
   const [message, setMessage] = useState('')
   const [showInstagramPopup, setShowInstagramPopup] = useState(false)
 
+  const isValidEmail = (email) =>
+  /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
+
   const handleSubmit = async (e) => {
-    e.preventDefault()
-    setLoading(true)
-    setMessage('')
+  e.preventDefault()
+  setLoading(true)
+  setMessage('')
 
-    try {
-      const response = await fetch("https://backendevent-etce.onrender.com/api/waitlist", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email }),
-      })
-
-      if (response.ok) {
-        setSubmitted(true)
-        setMessage("🎉 You're on the list! We'll notify you soon.")
-      } else {
-        setMessage("🎉 You're on the list! We'll notify you soon.")
-      }
-    } catch (err) {
-      console.error(err)
-      setMessage("🎉 You're on the list! We'll notify you soon.")
-    } finally {
-      setLoading(false)
-    }
+  if (!isValidEmail(email)) {
+    setLoading(false)
+    setMessage("❌ Please enter a valid email address.")
+    return
   }
+
+  try {
+    const response = await fetch("https://backendevent-etce.onrender.com/api/waitlist", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email }),
+    })
+
+    const text = await response.text()
+
+    if (response.ok) {
+      setSubmitted(true)
+      setMessage("🎉 You're on the list! We'll notify you soon.")
+    } else if (response.status === 409) {
+      setMessage("✅ You're already on the list!")
+    } else if (response.status === 400) {
+      setMessage("❌ Invalid email format.")
+    } else if (response.status === 429) {
+      setMessage("⏱️ Please wait a bit before submitting again.")
+    } else {
+      setMessage(text || "❌ Something went wrong. Please try again.")
+    }
+  } catch (err) {
+    console.error(err)
+    setMessage("❌ Network error. Please try again later.")
+  } finally {
+    setLoading(false)
+  }
+}
 
   useEffect(() => {
     if (message) {
