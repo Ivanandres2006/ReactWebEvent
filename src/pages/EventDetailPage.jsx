@@ -43,7 +43,7 @@ export default function EventDetailPage() {
   useEffect(() => {
     if (!token) return
 
-    fetch('http://localhost:8080/user/me', {
+    fetch('https://backendevent-etce.onrender.com/user/me', {
       headers: {
         Authorization: `Bearer ${token}`,
       },
@@ -70,7 +70,7 @@ export default function EventDetailPage() {
       return
     }
 
-    fetch(`http://localhost:8080/events/${id}`, {
+    fetch(`https://backendevent-etce.onrender.com/events/${id}`, {
       headers: { Authorization: `Bearer ${token}` },
     })
       .then(async res => {
@@ -123,7 +123,7 @@ export default function EventDetailPage() {
 
       console.log('Sending checkout request with body:', body)
 
-      const res = await fetch(`http://localhost:8080/api/tickets/checkout`, {
+      const res = await fetch(`https://backendevent-etce.onrender.com/api/tickets/checkout`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -243,7 +243,7 @@ export default function EventDetailPage() {
         clientSecret={clientSecret}
         email={email}
         onSuccess={async (paymentIntentId) => {
-          await fetch(`http://localhost:8080/api/tickets/confirm?paymentIntentId=${paymentIntentId}`, {
+          await fetch(`https://backendevent-etce.onrender.com/api/tickets/confirm?paymentIntentId=${paymentIntentId}`, {
             method: 'POST',
           })
           window.location.href = `/success?eventId=${id}`

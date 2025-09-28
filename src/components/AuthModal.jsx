@@ -18,8 +18,8 @@ export default function AuthModal({ onClose }) {
     setLoading(true)
 
     const url = isLogin
-      ? 'http://localhost:8080/auth/login'
-      : 'http://localhost:8080/auth/register'
+      ? 'https://backendevent-etce.onrender.com/auth/login'
+      : 'https://backendevent-etce.onrender.com/auth/register'
 
     const payload = isLogin
       ? { email: form.emailOrPhone, password: form.password }
@@ -60,7 +60,7 @@ export default function AuthModal({ onClose }) {
     setLoading(true)
 
     try {
-      const res = await fetch('http://localhost:8080/auth/verify', {
+      const res = await fetch('https://backendevent-etce.onrender.com/auth/verify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
