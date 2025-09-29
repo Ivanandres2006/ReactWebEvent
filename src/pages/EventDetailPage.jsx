@@ -40,7 +40,7 @@ export default function EventDetailPage() {
   const [showPopup, setShowPopup] = useState(false)
   const [clientSecret, setClientSecret] = useState(null)
 
-  // NEW: dedicated tiers state (loaded from /events/:id/tiers)
+  // dedicated tiers state
   const [tiers, setTiers] = useState([])
   const [tiersLoading, setTiersLoading] = useState(false)
   const [tiersErr, setTiersErr] = useState(null)
@@ -95,9 +95,10 @@ export default function EventDetailPage() {
     })()
   }, [id])
 
-  // Load ticket tiers when popup opens
+  // Load ticket tiers when popup opens (and remember last picked)
   useEffect(() => {
     if (!showPopup || !id) return
+    const lsKey = `lastTier:${id}`
 
     const loadTiers = async () => {
       setTiersLoading(true)
@@ -108,18 +109,18 @@ export default function EventDetailPage() {
           headers: token ? { Authorization: `Bearer ${token}` } : {},
         })
 
-        // If the endpoint is protected, ask user to log in
         if (res.status === 401) {
           setShowAuth(true)
           setTiersLoading(false)
           return
         }
 
-        // If endpoint not found or not implemented yet, fall back to event.ticketTiers
         if (res.status === 404) {
           const fallback = event?.ticketTiers || []
           setTiers(fallback)
-          setSelectedTierId(fallback[0]?.id ?? null)
+          const saved = parseInt(localStorage.getItem(lsKey) || 'NaN', 10)
+          const exists = fallback.some(t => t?.id === saved)
+          setSelectedTierId(exists ? saved : (fallback[0]?.id ?? null))
           setTiersLoading(false)
           return
         }
@@ -128,13 +129,19 @@ export default function EventDetailPage() {
         const data = await res.json()
 
         const list = Array.isArray(data) ? data : []
-        setTiers(list.length ? list : (event?.ticketTiers || []))
-        setSelectedTierId((list[0] || event?.ticketTiers?.[0])?.id ?? null)
+        const finalList = list.length ? list : (event?.ticketTiers || [])
+        setTiers(finalList)
+
+        const saved = parseInt(localStorage.getItem(lsKey) || 'NaN', 10)
+        const exists = finalList.some(t => t?.id === saved)
+        setSelectedTierId(exists ? saved : (finalList[0]?.id ?? null))
       } catch (e) {
         console.warn('⚠️ tiers error, using fallback:', e.message)
         const fallback = event?.ticketTiers || []
         setTiers(fallback)
-        setSelectedTierId(fallback[0]?.id ?? null)
+        const saved = parseInt(localStorage.getItem(lsKey) || 'NaN', 10)
+        const exists = fallback.some(t => t?.id === saved)
+        setSelectedTierId(exists ? saved : (fallback[0]?.id ?? null))
         setTiersErr(e.message)
       } finally {
         setTiersLoading(false)
@@ -289,7 +296,10 @@ export default function EventDetailPage() {
             setShowPopup(false)
             setSelectedTierId(null)
           }}
-          onSelectTier={setSelectedTierId}
+          onSelectTier={(tierId) => {
+            setSelectedTierId(tierId)
+            try { localStorage.setItem(`lastTier:${id}`, String(tierId)) } catch {}
+          }}
           onQuantityChange={setQuantity}
           onPay={handleBuy}
         />

@@ -1,91 +1,136 @@
 .popup-overlay {
-    position: fixed;
-    top: 0;
-    left: 0;
-    z-index: 1000;
-    width: 100vw;
-    height: 100vh;
-    background: rgba(0, 0, 0, 0.6);
-    backdrop-filter: blur(6px);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-  
-  .popup-modal {
-    background: #0A0A23;
-    padding: 32px;
-    border-radius: 20px;
-    width: 90%;
-    max-width: 400px;
-    color: white;
-    animation: fadeInScale 0.25s ease;
-    box-shadow: 0 0 20px #00E67666;
-  }
-  
-  @keyframes fadeInScale {
-    from {
-      transform: scale(0.92);
-      opacity: 0;
-    }
-    to {
-      transform: scale(1);
-      opacity: 1;
-    }
-  }
-  
-  .ticket-tier {
-    background: #111729;
-    padding: 16px 20px;
-    margin: 12px 0;
-    border: 1px solid #222;
-    border-radius: 12px;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    cursor: pointer;
-    transition: transform 0.2s ease, box-shadow 0.2s ease;
-  }
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 1000;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
 
-  .ticket-tier:hover {
-    transform: scale(1.01);
-    box-shadow: 0 0 12px rgba(0, 230, 118, 0.2);
-  }
-  
-  .ticket-tier.selected {
-    background: #0f1a2f;
-    border: 1px solid #00E676;
-    color: #00E676;
-    font-weight: 600;
-  }
-  
-  .ticket-quantity {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    margin-top: 20px;
-  }
-  
-  .ticket-quantity input {
-    width: 60px;
-    padding: 8px;
-    border-radius: 8px;
-    background: #1b1b2c;
-    border: 1px solid #444;
-    color: white;
-    text-align: center;
-  }
-  
-  .buy-button {
-    width: 100%;
-    margin-top: 24px;
-    background: #00E676;
-    color: black;
-    font-weight: bold;
-    font-size: 16px;
-    padding: 14px;
-    border-radius: 12px;
-    border: none;
-    cursor: pointer;
-  }
-  
+.popup-modal {
+  background: #0A0A23;
+  padding: 32px;
+  border-radius: 20px;
+  width: 90%;
+  max-width: 400px;
+  color: white;
+  animation: fadeInScale 0.25s ease;
+  box-shadow: 0 0 20px #00E67666;
+}
+
+@keyframes fadeInScale {
+  from { transform: scale(0.92); opacity: 0; }
+  to   { transform: scale(1);    opacity: 1; }
+}
+
+/* base card */
+.ticket-tier {
+  background: #111729;
+  padding: 16px 20px;
+  margin: 12px 0;
+  border: 1px solid #222;
+  border-radius: 12px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease, background 0.2s ease;
+}
+.ticket-tier:hover {
+  transform: scale(1.01);
+  box-shadow: 0 0 12px rgba(0, 230, 118, 0.2);
+}
+.ticket-tier.selected {
+  background: #0f1a2f;
+  border: 1px solid #00E676;
+  color: #00E676;
+  font-weight: 600;
+}
+
+/* enriched layout */
+.ticket-tier.rich {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+}
+.ticket-tier.rich.disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* top row */
+.tier-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+}
+.tier-name { font-weight: 600; }
+.tier-price { font-variant-numeric: tabular-nums; }
+
+/* description as bullets */
+.tier-desc {
+  margin: 6px 0 0 0;
+  padding-left: 18px;
+  opacity: 0.9;
+}
+.tier-desc li {
+  margin: 2px 0;
+  line-height: 1.2;
+}
+
+/* meta chips */
+.tier-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+.chip {
+  font-size: 12px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.1);
+}
+.chip.warn { background: rgba(255,165,0,0.22); }  /* orange */
+.chip.light { background: rgba(255,255,255,0.06); }
+
+/* qty + pay */
+.ticket-quantity {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 20px;
+}
+.ticket-quantity input {
+  width: 60px;
+  padding: 8px;
+  border-radius: 8px;
+  background: #1b1b2c;
+  border: 1px solid #444;
+  color: white;
+  text-align: center;
+}
+
+.buy-button {
+  width: 100%;
+  margin-top: 24px;
+  background: #00E676;
+  color: black;
+  font-weight: bold;
+  font-size: 16px;
+  padding: 14px;
+  border-radius: 12px;
+  border: none;
+  cursor: pointer;
+}
+.buy-button:disabled {
+  cursor: not-allowed;
+  filter: saturate(0.3) brightness(0.8);
+}
