@@ -35,7 +35,27 @@ export default function StripeCardForm({ clientSecret, email, onSuccess }) {
     <form onSubmit={handleSubmit} className="stripe-card-form">
       <label>Card Information</label>
       <div className="card-input">
-        <CardElement options={{ hidePostalCode: true }} />
+      // StripeCardForm.jsx
+<CardElement
+  options={{
+    hidePostalCode: true,
+    style: {
+      base: {
+        color: '#fff',                 // input text
+        iconColor: '#fff',             // brand icon color
+        '::placeholder': { color: 'rgba(255,255,255,0.7)' },
+        fontWeight: 500,
+        fontFamily: 'Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial',
+        fontSize: '16px',
+      },
+      invalid: {
+        color: '#ff5b5b',
+        iconColor: '#ff5b5b',
+      },
+    },
+  }}
+/>
+
       </div>
       {err && <div className="text-red-500 text-sm mt-2">{err}</div>}
       <button type="submit" disabled={!stripe || loading}>

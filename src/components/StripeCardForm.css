@@ -14,6 +14,14 @@
     margin-bottom: 8px;
     font-weight: 600;
   }
+
+  .stripe-card-form label { color: #fff; }
+.stripe-card-form .card-input {
+  background: #0d1126;
+  border: 1px solid #2a324a;
+  border-radius: 12px;
+  padding: 12px 14px;
+}
   
   .card-input {
     background: #1b1b2e;
