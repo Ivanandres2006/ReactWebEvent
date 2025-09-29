@@ -85,3 +85,24 @@
   /* ensure no rogue background images from old CSS */
   .success-page, .success-shell{ background-image:none !important; }
   
+  /* green dot you already have; add a yellow variant for pending state if you use it */
+.status-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: #25d366; /* success */
+  box-shadow: 0 0 0 3px rgba(37,211,102,.18);
+  margin-right: 10px;
+}
+
+/* when the page has ?pending=... you can put a class on the shell if you want.
+   If not adding a class, you can leave this unused. */
+.success-shell.pending .status-dot {
+  background: #f5c042; /* pending amber */
+  box-shadow: 0 0 0 3px rgba(245,192,66,.18);
+}
+
+.hint-error {
+  color: #ff8080;
+}
+

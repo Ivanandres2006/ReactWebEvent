@@ -139,3 +139,70 @@
 .alt-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
 .btn-alt { padding: 10px 12px; border-radius: 10px; background: #1f2937; color: #fff; border: 1px solid #374151; }
 .btn-alt:disabled { opacity: .6; cursor: not-allowed; }
+
+/* container around payment actions */
+.pay-buttons {
+  margin-top: 16px;
+}
+
+/* grid for manual method buttons */
+.alt-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-top: 10px;
+}
+
+/* main card button (you likely already have .buy-button) */
+.buy-button {
+  width: 100%;
+  padding: 12px 14px;
+  border-radius: 12px;
+  font-weight: 600;
+  border: none;
+  cursor: pointer;
+  background: #1fd66e;
+  color: #0b1b12;
+  transition: transform .05s ease, opacity .2s ease, filter .2s ease;
+}
+.buy-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  filter: saturate(0.8);
+}
+.buy-button:active { transform: translateY(1px); }
+
+/* alt method buttons */
+.btn-alt {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 40px;
+  padding: 0 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(255,255,255,.14);
+  background: rgba(255,255,255,.06);
+  color: #eaf6ee;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background .2s ease, border-color .2s ease, transform .05s ease, opacity .2s ease;
+}
+.btn-alt:hover { background: rgba(255,255,255,.10); }
+.btn-alt:active { transform: translateY(1px); }
+.btn-alt:disabled {
+  opacity: .55;
+  cursor: not-allowed;
+}
+
+/* small helper text under buttons */
+.pay-hint {
+  margin-top: 8px;
+  font-size: 12px;
+  color: rgba(255,255,255,.7);
+}
+
+@media (max-width: 420px) {
+  .alt-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
