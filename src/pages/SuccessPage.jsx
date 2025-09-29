@@ -1,151 +1,143 @@
+// src/pages/SuccessPage.jsx
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams, Link } from 'react-router-dom'
+import WebTicketCard from '../components/WebTicketCard'
+import defaultEvent from '../assets/defaultEvent.jpg'
 
 const API = 'https://backendevent-etce.onrender.com'
 
 export default function SuccessPage() {
   const [params] = useSearchParams()
-  const eventId = params.get('eventId')
+  const eventId = Number(params.get('eventId'))
   const navigate = useNavigate()
 
   const token = localStorage.getItem('token') || ''
   const email = localStorage.getItem('email') || ''
-  const [event, setEvent] = useState(null)
-  const [allTickets, setAllTickets] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [err, setErr] = useState(null)
-  const [autoRedirect, setAutoRedirect] = useState(true)
 
-  // Load the event (for title/date/location)
+  const [event, setEvent] = useState(null)
+  const [tickets, setTickets] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
+
+  // Load event (public)
   useEffect(() => {
-    let ignore = false
-    async function go() {
-      try {
-        const res = await fetch(`${API}/events/${eventId}`)
-        if (!res.ok) throw new Error(`Event ${res.status}`)
-        const data = await res.json()
-        if (!ignore) setEvent(data)
-      } catch (e) {
-        if (!ignore) setErr(e.message)
-      }
-    }
-    if (eventId) go()
-    return () => { ignore = true }
+    if (!eventId) return
+    fetch(`${API}/events/${eventId}`)
+      .then(r => r.ok ? r.json() : Promise.reject(new Error(`Event ${r.status}`)))
+      .then(setEvent)
+      .catch(() => {})
   }, [eventId])
 
-  // Load all tickets for the user (by email)
+  // Load my tickets and filter by event
   useEffect(() => {
-    let ignore = false
-    async function go() {
+    if (!email) {
+      setError('Missing email. Please log in again.')
+      setLoading(false)
+      return
+    }
+    const run = async () => {
       try {
         const res = await fetch(`${API}/api/tickets/my?email=${encodeURIComponent(email)}`, {
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
+          headers: token ? { Authorization: `Bearer ${token}` } : {}
         })
         if (!res.ok) throw new Error(`Tickets ${res.status}`)
-        const data = await res.json()
-        if (!Array.isArray(data)) throw new Error('Invalid tickets response')
-        if (!ignore) setAllTickets(data)
+        const all = await res.json()
+        const mine = (all || []).filter(t => Number(t.eventId) === Number(eventId))
+        setTickets(mine)
       } catch (e) {
-        if (!ignore) setErr(e.message)
+        setError('Could not load your ticket. Please check your email.')
       } finally {
-        if (!ignore) setLoading(false)
+        setLoading(false)
       }
     }
-    if (email) go()
-    else setLoading(false)
-    return () => { ignore = true }
-  }, [email, token])
+    run()
+  }, [email, token, eventId])
 
-  // Only show tickets for THIS event
-  const eventTickets = useMemo(
-    () => allTickets.filter(t => String(t.eventId) === String(eventId)),
-    [allTickets, eventId]
-  )
-
-  // Auto redirect (can be canceled)
+  // Auto-return in 12s (but only if we failed to load a ticket)
   useEffect(() => {
-    if (!autoRedirect || !eventId) return
+    if (tickets.length) return
     const t = setTimeout(() => navigate(`/event/${eventId}`), 12000)
     return () => clearTimeout(t)
-  }, [autoRedirect, eventId, navigate])
+  }, [tickets.length, eventId, navigate])
+
+  const eventImg = useMemo(
+    () => (event?.imageUrl && event.imageUrl !== 'null') ? event.imageUrl : defaultEvent,
+    [event]
+  )
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-black to-[#0A0F2C] flex flex-col items-center text-white text-center px-6 py-10">
-      {/* check icon */}
-      <div className="mb-5">
-        <div className="w-20 h-20 flex items-center justify-center rounded-full border-4 border-[#00E676] shadow-lg shadow-[#00E676]/30 animate-pulse">
-          <svg xmlns="http://www.w3.org/2000/svg" className="w-10 h-10 text-[#00E676]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <div className="min-h-screen bg-gradient-to-b from-black to-[#0A0F2C] text-white">
+      <div className="max-w-3xl mx-auto px-5 py-12 text-center">
+        {/* header check */}
+        <div className="mx-auto mb-6 w-20 h-20 flex items-center justify-center rounded-full border-4 border-neonGreen shadow-lg shadow-neonGreen/30 animate-pulse">
+          <svg xmlns="http://www.w3.org/2000/svg" className="w-10 h-10 text-neonGreen" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
             <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
           </svg>
         </div>
-      </div>
 
-      <h1 className="text-3xl font-extrabold mb-1">Payment Successful</h1>
-      <p className="text-white/80">
-        {email
-          ? <>We’ve emailed your ticket to <span className="font-semibold">{email}</span>.</>
-          : 'We’ve emailed your ticket.'}
-      </p>
+        <h1 className="text-3xl font-extrabold">Payment Successful</h1>
+        <p className="text-white/80 mt-2">We’ve emailed your confirmation to <span className="font-semibold">{email || 'your email'}</span>.</p>
 
-      <EmailQuickOpen email={email} />
-
-      <div className="mt-8 w-full max-w-3xl text-left">
-        <h2 className="text-xl font-bold mb-3">🎫 Your Ticket{eventTickets.length > 1 ? 's' : ''}</h2>
-
-        {loading && <div className="text-white/70">Loading your tickets…</div>}
-        {!loading && !!err && <div className="text-red-400">{String(err)}</div>}
-        {!loading && !err && eventTickets.length === 0 && (
-          <div className="text-white/70">
-            We couldn’t find tickets for this event yet. If you just paid, give it a few seconds and
-            <button className="underline ml-1" onClick={() => window.location.reload()}>refresh</button>.
-          </div>
-        )}
-
-        <div className="grid gap-5">
-          {eventTickets.map(t => (
-            <WebTicketCard
-              key={t.id}
-              ticket={t}
-              event={event}
-              api={API}
-              token={token}
-            />
-          ))}
+        {/* Quick actions */}
+        <div className="flex flex-wrap items-center justify-center gap-3 mt-6">
+          <a
+            className="px-4 py-2 rounded-lg bg-white/10 hover:bg-white/15 border border-white/10"
+            href={`https://mail.google.com/mail/u/0/?ogbl#search/from:(wknd)%20to:(${encodeURIComponent(email)})`}
+            target="_blank"
+            rel="noreferrer"
+          >
+            Open Gmail
+          </a>
+          <a
+            className="px-4 py-2 rounded-lg bg-white/10 hover:bg-white/15 border border-white/10"
+            href="mailto:"
+          >
+            Open Email App
+          </a>
+          <Link
+            className="px-4 py-2 rounded-lg bg-neonGreen text-black font-semibold"
+            to={`/event/${eventId}`}
+          >
+            Back to Event
+          </Link>
         </div>
+
+        {/* Event preview */}
+        <div className="mt-10 rounded-2xl overflow-hidden shadow-xl shadow-black/30 border border-white/5">
+          <img src={eventImg} onError={(e)=>{e.currentTarget.src = defaultEvent}} alt="" className="w-full max-h-72 object-cover" />
+          <div className="p-5 text-left">
+            <h2 className="text-xl font-semibold">{event?.title || 'Your Event'}</h2>
+            <p className="text-white/70">{event?.location}</p>
+          </div>
+        </div>
+
+        {/* Ticket(s) */}
+        <div className="mt-10">
+          {loading && <p className="text-white/70">Loading your ticket…</p>}
+          {error && <p className="text-red-400">{error}</p>}
+
+          {!loading && !error && tickets.length === 0 && (
+            <div className="text-white/80">
+              <p>We couldn’t display your ticket here, but it’s in your email.</p>
+            </div>
+          )}
+
+          <div className="grid md:grid-cols-2 gap-6 mt-6">
+            {tickets.map(t => (
+              <WebTicketCard
+                key={t.id}
+                ticket={t}
+                apiBase={API}
+                token={token}
+              />
+            ))}
+          </div>
+        </div>
+
+        <p className="text-white/60 text-sm mt-10">
+          Keep this page handy — you can present the QR at the door.
+        </p>
       </div>
-
-      <div className="mt-10 flex items-center gap-3">
-        <Link
-          to={`/event/${eventId}`}
-          className="px-5 py-3 rounded-lg bg-[#00E676] text-black font-semibold"
-        >
-          Back to Event
-        </Link>
-        <button
-          className="px-4 py-3 rounded-lg bg-white/10 hover:bg-white/15 border border-white/10"
-          onClick={() => setAutoRedirect(!autoRedirect)}
-          title="Toggle auto-redirect"
-        >
-          {autoRedirect ? 'Stop auto-redirect' : 'Enable auto-redirect'}
-        </button>
-      </div>
-
-      <p className="text-white/60 text-sm mt-3">
-        {autoRedirect ? 'You’ll be redirected in a few seconds…' : 'Auto-redirect paused.'}
-      </p>
-    </div>
-  )
-}
-
-function EmailQuickOpen({ email }) {
-  if (!email) return null
-  return (
-    <div className="mt-4 flex flex-wrap items-center justify-center gap-3 text-sm">
-      <span className="text-white/60">Open your email:</span>
-      <a className="px-3 py-2 rounded bg-white/10 hover:bg-white/15" href="https://mail.google.com/" target="_blank" rel="noreferrer">Gmail</a>
-      <a className="px-3 py-2 rounded bg-white/10 hover:bg-white/15" href="https://outlook.live.com/mail/" target="_blank" rel="noreferrer">Outlook</a>
-      <a className="px-3 py-2 rounded bg-white/10 hover:bg-white/15" href="https://mail.yahoo.com/" target="_blank" rel="noreferrer">Yahoo</a>
-      <a className="px-3 py-2 rounded bg-white/10 hover:bg-white/15" href={`mailto:${email}`}>Apple Mail</a>
     </div>
   )
 }

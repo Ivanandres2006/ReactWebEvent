@@ -1,60 +1,60 @@
+// src/components/WebTicketCard.jsx
 import { useEffect, useState } from 'react'
 
-/**
- * Web ticket card:
- * - Fetches QR as BLOB (so we can send Authorization header).
- * - Offers Apple Wallet (.pkpass) download using same endpoint as the iOS app.
- */
-export default function WebTicketCard({ ticket, event, api, token }) {
+export default function WebTicketCard({ ticket, apiBase, token }) {
   const [qrUrl, setQrUrl] = useState(null)
-  const [downloadingPass, setDownloadingPass] = useState(false)
+  const [downloading, setDownloading] = useState(false)
   const [error, setError] = useState(null)
 
-  // build display data
-  const title = ticket?.tierName || 'Ticket'
-  const dateStr = event?.dateTime ? formatDate(event.dateTime) : ''
-  const location = event?.location || ''
-  const price = priceFromEventTier(event, ticket?.tierName)
-
-  // Fetch QR blob with Authorization
+  // Fetch QR (auth header → blob → objectURL)
   useEffect(() => {
-    let revoke = null
-    let cancelled = false
-
-    async function go() {
-      setError(null)
+    let revoked
+    const run = async () => {
       try {
-        const res = await fetch(`${api}/api/tickets/qr/${ticket.id}`, {
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        setError(null)
+        const res = await fetch(`${apiBase}/api/tickets/qr/${ticket.id}`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {}
         })
         if (!res.ok) throw new Error(`QR ${res.status}`)
         const blob = await res.blob()
         const url = URL.createObjectURL(blob)
-        revoke = () => URL.revokeObjectURL(url)
-        if (!cancelled) setQrUrl(url)
+        setQrUrl(url)
+        revoked = url
       } catch (e) {
-        if (!cancelled) setError(e.message)
+        setError('Could not load QR')
       }
     }
+    run()
+    return () => { if (revoked) URL.revokeObjectURL(revoked) }
+  }, [apiBase, token, ticket.id])
 
-    go()
-    return () => {
-      cancelled = true
-      if (revoke) revoke()
-    }
-  }, [api, ticket?.id, token])
-
-  async function downloadPass() {
-    setDownloadingPass(true)
-    setError(null)
+  const downloadPkPass = async () => {
     try {
-      const res = await fetch(`${api}/api/passes/ticket/${ticket.id}`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      setDownloading(true)
+      setError(null)
+      const res = await fetch(`${apiBase}/api/passes/ticket/${ticket.id}`, {
+        headers: {
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          Accept: 'application/vnd.apple.pkpass'
+        }
       })
-      if (!res.ok) throw new Error(`Pass ${res.status}`)
-      const blob = await res.blob()
-      const a = document.createElement('a')
+      if (!res.ok) throw new Error(`pkpass ${res.status}`)
+      let data = await res.arrayBuffer()
+
+      // Server may wrap in JSON {pkpass: base64}
+      try {
+        const text = new TextDecoder().decode(data)
+        const maybeJson = JSON.parse(text)
+        if (maybeJson?.pkpass) {
+          data = Uint8Array.from(atob(maybeJson.pkpass), c => c.charCodeAt(0)).buffer
+        }
+      } catch {
+        // not JSON → already .pkpass bytes
+      }
+
+      const blob = new Blob([data], { type: 'application/vnd.apple.pkpass' })
       const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
       a.href = url
       a.download = `ticket-${ticket.id}.pkpass`
       document.body.appendChild(a)
@@ -62,76 +62,55 @@ export default function WebTicketCard({ ticket, event, api, token }) {
       a.remove()
       URL.revokeObjectURL(url)
     } catch (e) {
-      setError(e.message)
+      setError('Could not download Wallet pass')
     } finally {
-      setDownloadingPass(false)
+      setDownloading(false)
     }
   }
 
   return (
-    <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-5">
-      <div className="flex items-start justify-between gap-4">
+    <div className="rounded-2xl p-5 bg-white/5 border border-white/10 text-left">
+      <div className="flex items-center justify-between mb-4">
         <div>
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-lg bg-white/10 text-[#00E676] font-semibold">
-            {title}
+          <div className="text-sm uppercase tracking-wide text-white/60">Ticket</div>
+          <div className="text-xl font-semibold">{ticket.tierName || 'General'}</div>
+        </div>
+        <div className="text-white/70">#{ticket.id}</div>
+      </div>
+
+      <div className="flex items-center justify-center">
+        {qrUrl ? (
+          <img
+            src={qrUrl}
+            alt="Ticket QR"
+            className="w-56 h-56 object-contain rounded-lg bg-black/60 p-3"
+          />
+        ) : (
+          <div className="w-56 h-56 flex items-center justify-center rounded-lg bg-black/60">
+            <span className="text-white/60 text-sm">{error || 'Loading QR…'}</span>
           </div>
-          <div className="mt-3 text-white/85">{price != null ? (price > 0 ? `$${price.toFixed(2)}` : 'FREE') : '—'}</div>
-          <div className="mt-1 text-white/70 text-sm">{dateStr}</div>
-          <div className="text-white/60 text-sm">{location}</div>
-          <div className="mt-2 text-white/70 text-xs">Ticket #{ticket.id}</div>
-        </div>
-
-        <div className="shrink-0">
-          {qrUrl ? (
-            <img
-              src={qrUrl}
-              alt="Ticket QR"
-              className="w-[180px] h-[180px] rounded-xl border border-white/10 bg-black/60 object-contain"
-            />
-          ) : (
-            <div className="w-[180px] h-[180px] rounded-xl border border-white/10 bg-black/60 flex items-center justify-center text-white/50">
-              {error ? 'QR unavailable' : 'Loading QR…'}
-            </div>
-          )}
-        </div>
+        )}
       </div>
 
-      <div className="mt-4 flex flex-wrap items-center gap-3">
+      <div className="mt-5 grid grid-cols-2 gap-3">
         <button
-          className="px-4 py-2 rounded-lg bg-[#00E676] text-black font-semibold"
-          onClick={downloadPass}
-          disabled={downloadingPass}
+          className="px-4 py-2 rounded-lg bg-neonGreen text-black font-semibold"
+          onClick={downloadPkPass}
+          disabled={downloading}
         >
-          {downloadingPass ? 'Preparing Wallet Pass…' : 'Add to Apple Wallet'}
+          {downloading ? 'Preparing…' : 'Add to Wallet (.pkpass)'}
         </button>
-
-        <a
-          className="px-4 py-2 rounded-lg bg-white/10 hover:bg-white/15 border border-white/10"
-          href={qrUrl || '#'}
-          download={`ticket-${ticket.id}-qr.png`}
-          onClick={(e) => { if (!qrUrl) e.preventDefault() }}
+        <button
+          className="px-4 py-2 rounded-lg bg-white/10 border border-white/10"
+          onClick={() => window.print()}
         >
-          Download QR
-        </a>
-
-        {error && <span className="text-red-400 text-sm">{String(error)}</span>}
+          Print
+        </button>
       </div>
+
+      <p className="text-white/60 text-xs mt-3">
+        Present this QR at the entrance. Keep the Wallet pass or email as backup.
+      </p>
     </div>
   )
-}
-
-function formatDate(isoString) {
-  const date = new Date(isoString)
-  return date.toLocaleString('en-US', {
-    weekday: 'long',
-    month: 'long',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  })
-}
-
-function priceFromEventTier(event, tierName) {
-  const match = event?.ticketTiers?.find?.(t => t.name === tierName)
-  return typeof match?.price === 'number' ? match.price : null
 }

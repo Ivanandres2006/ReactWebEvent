@@ -35,7 +35,6 @@ export default function StripeCardForm({ clientSecret, email, onSuccess }) {
     <form onSubmit={handleSubmit} className="stripe-card-form">
       <label>Card Information</label>
       <div className="card-input">
-      // StripeCardForm.jsx
 <CardElement
   options={{
     hidePostalCode: true,
