@@ -1,6 +1,7 @@
 import { useParams, useSearchParams } from 'react-router-dom'
 import { useEffect, useState } from 'react'
 import { loadStripe } from '@stripe/stripe-js'
+import { Elements } from '@stripe/react-stripe-js'
 import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet'
 import L from 'leaflet'
 import AuthModal from '../components/AuthModal'
@@ -65,14 +66,26 @@ export default function EventDetailPage() {
 
   useEffect(() => {
     if (!id) return
-    if (!token || token.length < 10) {
-      setShowAuth(true)
-      return
-    }
 
-    fetch(`https://backendevent-etce.onrender.com/events/${id}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
+(async () => {
+  try {
+    // Try public first
+    let res = await fetch(`https://backendevent-etce.onrender.com/events/${id}`)
+    if (res.status === 401 && token) {
+      // fallback to auth if your backend requires it
+      res = await fetch(`https://backendevent-etce.onrender.com/events/${id}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (res.status === 401) setShowAuth(true)
+    }
+    if (!res.ok) throw new Error(`Failed to fetch event: ${res.status}`)
+    const data = await res.json()
+    setEvent(data)
+  } catch (e) {
+    console.error('❌ Event load error:', e)
+    setError(true)
+  }
+})()
       .then(async res => {
         if (res.status === 401) {
           const errorText = await res.text()
@@ -135,10 +148,11 @@ export default function EventDetailPage() {
       const data = await res.json()
       console.log('💬 Checkout response:', data)
 
-      if (data.free === 'true') {
-        window.location.href = `/success?eventId=${id}`
-        return
-      }
+if (data.free === true || data.free === 'true') {
+  window.location.href = `/success?eventId=${id}`
+  return
+}
+
 
       if (data.clientSecret) {
         setClientSecret(data.clientSecret)
@@ -236,19 +250,22 @@ export default function EventDetailPage() {
         />
       )}
 
+
 {clientSecret && (
   <div className="popup-overlay" onClick={() => setClientSecret(null)}>
     <div className="popup-modal" onClick={(e) => e.stopPropagation()}>
-      <StripeCardForm
-        clientSecret={clientSecret}
-        email={email}
-        onSuccess={async (paymentIntentId) => {
-          await fetch(`https://backendevent-etce.onrender.com/api/tickets/confirm?paymentIntentId=${paymentIntentId}`, {
-            method: 'POST',
-          })
-          window.location.href = `/success?eventId=${id}`
-        }}
-      />
+      <Elements stripe={stripePromise} options={{ clientSecret }}>
+        <StripeCardForm
+          clientSecret={clientSecret}
+          email={email}
+          onSuccess={async (paymentIntentId) => {
+            await fetch(`https://backendevent-etce.onrender.com/api/tickets/confirm?paymentIntentId=${paymentIntentId}`, {
+              method: 'POST',
+            })
+            window.location.href = `/success?eventId=${id}`
+          }}
+        />
+      </Elements>
     </div>
   </div>
 )}
