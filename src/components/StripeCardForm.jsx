@@ -6,28 +6,28 @@ export default function StripeCardForm({ clientSecret, email, onSuccess }) {
   const stripe = useStripe()
   const elements = useElements()
   const [loading, setLoading] = useState(false)
+  const [err, setErr] = useState(null)
 
   const handleSubmit = async (e) => {
     e.preventDefault()
-    if (!stripe || !elements) return
-
-    setLoading(true)
+    if (!stripe || !elements || loading) return
+    setLoading(true); setErr(null)
 
     const result = await stripe.confirmCardPayment(clientSecret, {
       payment_method: {
         card: elements.getElement(CardElement),
-        billing_details: {
-          email,
-        },
+        billing_details: { email },
       },
     })
 
     setLoading(false)
 
     if (result.error) {
-      alert(result.error.message)
-    } else if (result.paymentIntent.status === 'succeeded') {
+      setErr(result.error.message || 'Payment failed.')
+    } else if (result.paymentIntent?.status === 'succeeded') {
       onSuccess(result.paymentIntent.id)
+    } else {
+      setErr('Payment not completed.')
     }
   }
 
@@ -37,8 +37,9 @@ export default function StripeCardForm({ clientSecret, email, onSuccess }) {
       <div className="card-input">
         <CardElement options={{ hidePostalCode: true }} />
       </div>
+      {err && <div className="text-red-500 text-sm mt-2">{err}</div>}
       <button type="submit" disabled={!stripe || loading}>
-        {loading ? 'Processing...' : 'Pay Now'}
+        {loading ? 'Processing…' : 'Pay Now'}
       </button>
     </form>
   )
