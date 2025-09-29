@@ -1,6 +1,6 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
-import { BrowserRouter } from 'react-router-dom'
+import { HashRouter } from 'react-router-dom'
 import { Elements } from '@stripe/react-stripe-js'
 import { loadStripe } from '@stripe/stripe-js'
 import App from './App.jsx'
@@ -10,10 +10,10 @@ const stripePromise = loadStripe('pk_test_51RcVeBBU1Fa59mBKHvngFVDwq8gBiZ863TKO6
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
-    <BrowserRouter>
-      <Elements stripe={stripePromise}>
-        <App />
-      </Elements>
-    </BrowserRouter>
+    <HashRouter>
+    <Elements stripe={stripePromise}>
+      <App />
+    </Elements>
+  </HashRouter>
   </StrictMode>,
 )
