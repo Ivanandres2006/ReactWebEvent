@@ -1,5 +1,5 @@
 import { useParams, useSearchParams } from 'react-router-dom'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { loadStripe } from '@stripe/stripe-js'
 import { Elements } from '@stripe/react-stripe-js'
 import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet'
@@ -40,48 +40,49 @@ export default function EventDetailPage() {
   const [showPopup, setShowPopup] = useState(false)
   const [clientSecret, setClientSecret] = useState(null)
 
-  // dedicated tiers state
+  // tiers
   const [tiers, setTiers] = useState([])
   const [tiersLoading, setTiersLoading] = useState(false)
   const [tiersErr, setTiersErr] = useState(null)
 
+  // one-shot checkout lock
+  const [checkingOut, setCheckingOut] = useState(false)
+  const clickedOnceRef = useRef(false)
+
   const token = localStorage.getItem('token')
   const isLoggedIn = !!(token && token.length > 0)
 
-  // Persist ref so it survives login/reload
   useEffect(() => {
     if (refCode) localStorage.setItem('wknd_ref', refCode)
   }, [refCode])
 
-  // Load user email (requires auth)
+  // Load user email
   useEffect(() => {
     if (!isLoggedIn) return
     fetch(`${API}/user/me`, { headers: { Authorization: `Bearer ${token}` } })
       .then(async res => {
         if (res.status === 401) {
           const txt = await res.text()
-          if (txt.includes('JWT expired')) {
-            localStorage.removeItem('token')
-          }
+          if (txt.includes('JWT expired')) localStorage.removeItem('token')
           setShowAuth(true)
-          return Promise.reject(new Error('401'))
+          throw new Error('401')
         }
         if (!res.ok) throw new Error('Failed to fetch user')
         return res.json()
       })
-      .then(data => {
-        if (data?.email) {
-          setEmail(data.email)
-          localStorage.setItem('email', data.email)
+      .then(d => {
+        if (d?.email) {
+          setEmail(d.email)
+          localStorage.setItem('email', d.email)
         }
       })
       .catch(() => {})
   }, [isLoggedIn, token])
 
-  // Load event (public)
+  // Load event
   useEffect(() => {
     if (!id) return
-    (async () => {
+    ;(async () => {
       try {
         const res = await fetch(`${API}/events/${id}`)
         if (!res.ok) throw new Error(`Failed to fetch event: ${res.status}`)
@@ -95,7 +96,7 @@ export default function EventDetailPage() {
     })()
   }, [id])
 
-  // Load ticket tiers when popup opens (and remember last picked)
+  // Load tiers when popup opens
   useEffect(() => {
     if (!showPopup || !id) return
     const lsKey = `lastTier:${id}`
@@ -103,7 +104,6 @@ export default function EventDetailPage() {
     const loadTiers = async () => {
       setTiersLoading(true)
       setTiersErr(null)
-
       try {
         const res = await fetch(`${API}/events/${id}/tiers`, {
           headers: token ? { Authorization: `Bearer ${token}` } : {},
@@ -111,7 +111,6 @@ export default function EventDetailPage() {
 
         if (res.status === 401) {
           setShowAuth(true)
-          setTiersLoading(false)
           return
         }
 
@@ -121,13 +120,11 @@ export default function EventDetailPage() {
           const saved = parseInt(localStorage.getItem(lsKey) || 'NaN', 10)
           const exists = fallback.some(t => t?.id === saved)
           setSelectedTierId(exists ? saved : (fallback[0]?.id ?? null))
-          setTiersLoading(false)
           return
         }
 
         if (!res.ok) throw new Error(`Tiers fetch failed: ${res.status}`)
         const data = await res.json()
-
         const list = Array.isArray(data) ? data : []
         const finalList = list.length ? list : (event?.ticketTiers || [])
         setTiers(finalList)
@@ -153,19 +150,19 @@ export default function EventDetailPage() {
   }, [showPopup, id, token])
 
   /**
-   * Handle checkout for multiple methods. `method` can be:
-   * 'card' | 'zelle' | 'pagoMovil' | 'cash'  (default 'card')
+   * Handle checkout; method: 'card' | 'zelle' | 'pagoMovil' | 'cash'
+   * Locked so it can’t fire twice.
    */
   const handleBuy = async (method = 'card') => {
-    if (!isLoggedIn) return setShowAuth(true)
-    if (!email) {
-      alert('Email not available. Please log in again.')
-      setShowAuth(true)
-      return
-    }
-    if (!selectedTierId) return alert('Please select a ticket tier')
+    if (checkingOut || clickedOnceRef.current) return
+    clickedOnceRef.current = true
+    setCheckingOut(true)
 
     try {
+      if (!isLoggedIn) { setShowAuth(true); return }
+      if (!email) { alert('Email not available. Please log in again.'); setShowAuth(true); return }
+      if (!selectedTierId) { alert('Please select a ticket tier'); return }
+
       const storedRef = localStorage.getItem('wknd_ref')
       const body = {
         eventId: parseInt(id),
@@ -173,7 +170,7 @@ export default function EventDetailPage() {
         quantity,
         email,
         ref: refCode || storedRef || null,
-        paymentMethod: typeof method === 'string' ? method : 'card', // guard
+        paymentMethod: typeof method === 'string' ? method : 'card',
       }
 
       const res = await fetch(`${API}/api/tickets/checkout`, {
@@ -204,16 +201,21 @@ export default function EventDetailPage() {
       if (data.clientSecret) {
         setClientSecret(data.clientSecret)
         setShowPopup(false)
-      } else {
-        alert(data.error || 'Unexpected server response')
+        // keep checkingOut locked until Stripe modal flow finishes
+        return
       }
+
+      alert(data.error || 'Unexpected server response')
     } catch (err) {
       console.error('❌ Checkout failed:', err)
       alert('Checkout error. Try again.')
+    } finally {
+      // If we did NOT open Stripe (clientSecret absent), unlock; otherwise Stripe flow will navigate on success.
+      setCheckingOut(false)
+      clickedOnceRef.current = false
     }
   }
 
-  // UI states
   if (showAuth && !isLoggedIn) {
     return (
       <AuthModal
@@ -303,16 +305,18 @@ export default function EventDetailPage() {
           error={tiersErr}
           selectedTierId={selectedTierId}
           quantity={quantity}
+          submitting={checkingOut}           // 🟡 disable Pay while posting
           onClose={() => {
             setShowPopup(false)
             setSelectedTierId(null)
+            setCheckingOut(false)
+            clickedOnceRef.current = false
           }}
           onSelectTier={(tierId) => {
             setSelectedTierId(tierId)
             try { localStorage.setItem(`lastTier:${id}`, String(tierId)) } catch {}
           }}
           onQuantityChange={setQuantity}
-          // If popup supplies a method, we use it. Otherwise defaults to 'card'.
           onPay={(method) => handleBuy(method ?? 'card')}
         />
       )}

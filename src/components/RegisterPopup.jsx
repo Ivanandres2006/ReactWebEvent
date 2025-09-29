@@ -7,10 +7,11 @@ export default function RegisterPopup({
   error = null,
   selectedTierId,
   quantity,
+  submitting = false,          // 🟡 new
   onClose,
   onSelectTier,
   onQuantityChange,
-  onPay, // function(method?: 'card'|'zelle'|'pagoMovil'|'cash')
+  onPay,                        // onPay(method?: 'card'|'zelle'|'pagoMovil'|'cash')
 }) {
   const fmtPrice = (n) => `$${Number(n || 0).toFixed(2)}`
   const splitDescription = (txt) => {
@@ -51,7 +52,7 @@ export default function RegisterPopup({
     return soldOut || isStartLocked(selectedTier)
   }, [selectedTier])
 
-  const canPay = !!selectedTierId && quantity > 0 && !selectedDisabled
+  const canPay = !!selectedTierId && quantity > 0 && !selectedDisabled && !submitting
 
   return (
     <div className="popup-overlay" onClick={onClose}>
@@ -114,13 +115,17 @@ export default function RegisterPopup({
           />
         </div>
 
-        {/* ✅ WRAP the call so we don't pass the click event object */}
         <button
           className="buy-button"
           disabled={!canPay}
-          onClick={() => onPay?.('card')}   // default method can be changed to show options
+          onClick={() => onPay?.('card')} // never pass the click event
+          style={submitting ? { pointerEvents: 'none', opacity: 0.6 } : {}}
         >
-          {canPay ? 'Pay' : (selectedDisabled ? 'Tier unavailable' : 'Select a tier')}
+          {submitting
+            ? 'Processing…'
+            : canPay
+              ? 'Pay'
+              : (selectedDisabled ? 'Tier unavailable' : 'Select a tier')}
         </button>
       </div>
     </div>

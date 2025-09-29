@@ -15,7 +15,6 @@ export default function StripeCardForm({ clientSecret, email, onSuccess }) {
       method: 'POST',
       headers: token ? { Authorization: `Bearer ${token}` } : {},
     })
-
     try {
       const j = await res.json()
       if (!res.ok || j?.error) throw new Error(j?.error || `Confirm failed (${res.status})`)
@@ -46,12 +45,8 @@ export default function StripeCardForm({ clientSecret, email, onSuccess }) {
     }
 
     const pi = result.paymentIntent
-    if (!pi?.id) {
-      setErr('No payment intent returned.')
-      return
-    }
+    if (!pi?.id) { setErr('No payment intent returned.'); return }
 
-    // Succeeded or processing -> finalize on backend
     if (pi.status === 'succeeded' || pi.status === 'processing') {
       try {
         await confirmOnBackend(pi.id)
@@ -87,9 +82,7 @@ export default function StripeCardForm({ clientSecret, email, onSuccess }) {
           }}
         />
       </div>
-
       {err && <div className="text-red-500 text-sm mt-2">{err}</div>}
-
       <button type="submit" disabled={!stripe || loading}>
         {loading ? 'Processing…' : 'Pay Now'}
       </button>
