@@ -40,7 +40,6 @@ export default function EventDetailPage() {
   const [showPopup, setShowPopup] = useState(false)
   const [clientSecret, setClientSecret] = useState(null)
 
-  // dedicated tiers state
   const [tiers, setTiers] = useState([])
   const [tiersLoading, setTiersLoading] = useState(false)
   const [tiersErr, setTiersErr] = useState(null)
@@ -48,21 +47,17 @@ export default function EventDetailPage() {
   const token = localStorage.getItem('token')
   const isLoggedIn = !!(token && token.length > 0)
 
-  // Persist ref so it survives login/reload
   useEffect(() => {
     if (refCode) localStorage.setItem('wknd_ref', refCode)
   }, [refCode])
 
-  // Load user email (requires auth)
   useEffect(() => {
     if (!isLoggedIn) return
     fetch(`${API}/user/me`, { headers: { Authorization: `Bearer ${token}` } })
       .then(async res => {
         if (res.status === 401) {
           const txt = await res.text()
-          if (txt.includes('JWT expired')) {
-            localStorage.removeItem('token')
-          }
+          if (txt.includes('JWT expired')) localStorage.removeItem('token')
           setShowAuth(true)
           return Promise.reject(new Error('401'))
         }
@@ -78,10 +73,9 @@ export default function EventDetailPage() {
       .catch(() => {})
   }, [isLoggedIn, token])
 
-  // Load event (public)
   useEffect(() => {
     if (!id) return
-    (async () => {
+    ;(async () => {
       try {
         const res = await fetch(`${API}/events/${id}`)
         if (!res.ok) throw new Error(`Failed to fetch event: ${res.status}`)
@@ -95,7 +89,6 @@ export default function EventDetailPage() {
     })()
   }, [id])
 
-  // Load ticket tiers when popup opens (and remember last picked)
   useEffect(() => {
     if (!showPopup || !id) return
     const lsKey = `lastTier:${id}`
@@ -127,7 +120,6 @@ export default function EventDetailPage() {
 
         if (!res.ok) throw new Error(`Tiers fetch failed: ${res.status}`)
         const data = await res.json()
-
         const list = Array.isArray(data) ? data : []
         const finalList = list.length ? list : (event?.ticketTiers || [])
         setTiers(finalList)
@@ -152,7 +144,12 @@ export default function EventDetailPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showPopup, id, token])
 
-  const handleBuy = async () => {
+  /**
+   * Handle checkout for multiple methods. `method` can be:
+   * 'card' | 'zelle' | 'pagoMovil' | 'cash'
+   * (defaults to 'card' for backward compatibility with RegisterPopup)
+   */
+  const handleBuy = async (method = 'card') => {
     if (!isLoggedIn) return setShowAuth(true)
     if (!email) {
       alert('Email not available. Please log in again.')
@@ -169,6 +166,7 @@ export default function EventDetailPage() {
         quantity,
         email,
         ref: refCode || storedRef || null,
+        paymentMethod: method, // 👈 important
       }
 
       const res = await fetch(`${API}/api/tickets/checkout`, {
@@ -179,14 +177,23 @@ export default function EventDetailPage() {
         },
         body: JSON.stringify(body),
       })
+
       const data = await res.json()
 
-      // free can be boolean or string
+      // free path
       if (data.free === true || data.free === 'true') {
         window.location.href = `/#/success?eventId=${id}`
         return
       }
 
+      // manual methods (zelle/pagoMovil/cash) may return {manual:true}
+      if (data.manual === true) {
+        alert('We notified the organizer. You will get a confirmation shortly.')
+        setShowPopup(false)
+        return
+      }
+
+      // card path
       if (data.clientSecret) {
         setClientSecret(data.clientSecret)
         setShowPopup(false)
@@ -199,7 +206,6 @@ export default function EventDetailPage() {
     }
   }
 
-  // UI states
   if (showAuth && !isLoggedIn) {
     return (
       <AuthModal
@@ -243,10 +249,7 @@ export default function EventDetailPage() {
         <p className="event-location">📍 {event?.location || ''}</p>
 
         <div className="event-actions">
-          <button
-            className="btn-primary"
-            onClick={() => setShowPopup(true)}
-          >
+          <button className="btn-primary" onClick={() => setShowPopup(true)}>
             Register
           </button>
           <button className="btn-secondary">Contact</button>
@@ -301,7 +304,8 @@ export default function EventDetailPage() {
             try { localStorage.setItem(`lastTier:${id}`, String(tierId)) } catch {}
           }}
           onQuantityChange={setQuantity}
-          onPay={handleBuy}
+          // If your popup passes a method, we accept it. If not, defaults to 'card'.
+          onPay={(method) => handleBuy(method)}
         />
       )}
 
@@ -313,8 +317,11 @@ export default function EventDetailPage() {
                 clientSecret={clientSecret}
                 email={email}
                 onSuccess={async (paymentIntentId) => {
-                  await fetch(`${API}/api/tickets/confirm?paymentIntentId=${paymentIntentId}`, {
+                  // confirm on backend WITH auth (if available)
+                  const token = localStorage.getItem('token') || ''
+                  await fetch(`${API}/api/tickets/confirm?paymentIntentId=${encodeURIComponent(paymentIntentId)}`, {
                     method: 'POST',
+                    headers: token ? { Authorization: `Bearer ${token}` } : {},
                   })
                   window.location.href = `/#/success?eventId=${id}`
                 }}
