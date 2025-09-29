@@ -40,6 +40,11 @@ export default function EventDetailPage() {
   const [showPopup, setShowPopup] = useState(false)
   const [clientSecret, setClientSecret] = useState(null)
 
+  // NEW: dedicated tiers state (loaded from /events/:id/tiers)
+  const [tiers, setTiers] = useState([])
+  const [tiersLoading, setTiersLoading] = useState(false)
+  const [tiersErr, setTiersErr] = useState(null)
+
   const token = localStorage.getItem('token')
   const isLoggedIn = !!(token && token.length > 0)
 
@@ -73,6 +78,7 @@ export default function EventDetailPage() {
       .catch(() => {})
   }, [isLoggedIn, token])
 
+  // Load event (public)
   useEffect(() => {
     if (!id) return
     (async () => {
@@ -87,7 +93,57 @@ export default function EventDetailPage() {
         setError(true)
       }
     })()
-  }, [id])  
+  }, [id])
+
+  // Load ticket tiers when popup opens
+  useEffect(() => {
+    if (!showPopup || !id) return
+
+    const loadTiers = async () => {
+      setTiersLoading(true)
+      setTiersErr(null)
+
+      try {
+        const res = await fetch(`${API}/events/${id}/tiers`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        })
+
+        // If the endpoint is protected, ask user to log in
+        if (res.status === 401) {
+          setShowAuth(true)
+          setTiersLoading(false)
+          return
+        }
+
+        // If endpoint not found or not implemented yet, fall back to event.ticketTiers
+        if (res.status === 404) {
+          const fallback = event?.ticketTiers || []
+          setTiers(fallback)
+          setSelectedTierId(fallback[0]?.id ?? null)
+          setTiersLoading(false)
+          return
+        }
+
+        if (!res.ok) throw new Error(`Tiers fetch failed: ${res.status}`)
+        const data = await res.json()
+
+        const list = Array.isArray(data) ? data : []
+        setTiers(list.length ? list : (event?.ticketTiers || []))
+        setSelectedTierId((list[0] || event?.ticketTiers?.[0])?.id ?? null)
+      } catch (e) {
+        console.warn('⚠️ tiers error, using fallback:', e.message)
+        const fallback = event?.ticketTiers || []
+        setTiers(fallback)
+        setSelectedTierId(fallback[0]?.id ?? null)
+        setTiersErr(e.message)
+      } finally {
+        setTiersLoading(false)
+      }
+    }
+
+    loadTiers()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showPopup, id, token])
 
   const handleBuy = async () => {
     if (!isLoggedIn) return setShowAuth(true)
@@ -120,7 +176,6 @@ export default function EventDetailPage() {
 
       // free can be boolean or string
       if (data.free === true || data.free === 'true') {
-        // If using HashRouter, use "/#/success..."; if BrowserRouter, use "/success..."
         window.location.href = `/#/success?eventId=${id}`
         return
       }
@@ -143,7 +198,6 @@ export default function EventDetailPage() {
       <AuthModal
         onClose={() => {
           setShowAuth(false)
-          // reload so effects re-run with the new token
           window.location.reload()
         }}
       />
@@ -152,6 +206,7 @@ export default function EventDetailPage() {
 
   if (error) return <div className="event-error">Failed to load event. Please try again later.</div>
   if (!event) return <div className="event-loading">Loading event...</div>
+
   return (
     <div className="event-fullscreen">
       <a
@@ -181,12 +236,13 @@ export default function EventDetailPage() {
         <p className="event-location">📍 {event?.location || ''}</p>
 
         <div className="event-actions">
-        <button
-   className="btn-primary"
-   onClick={() => (isLoggedIn ? setShowPopup(true) : setShowAuth(true))}
->
-  Register
-</button>        
+          <button
+            className="btn-primary"
+            onClick={() => setShowPopup(true)}
+          >
+            Register
+          </button>
+          <button className="btn-secondary">Contact</button>
           <button className="btn-secondary">Share</button>
         </div>
 
@@ -224,7 +280,9 @@ export default function EventDetailPage() {
 
       {showPopup && (
         <RegisterPopup
-          tiers={event.ticketTiers}
+          tiers={tiers.length ? tiers : (event.ticketTiers || [])}
+          loading={tiersLoading}
+          error={tiersErr}
           selectedTierId={selectedTierId}
           quantity={quantity}
           onClose={() => {
@@ -248,7 +306,6 @@ export default function EventDetailPage() {
                   await fetch(`${API}/api/tickets/confirm?paymentIntentId=${paymentIntentId}`, {
                     method: 'POST',
                   })
-                  // If using HashRouter, use "/#/success..."; if BrowserRouter, use "/success..."
                   window.location.href = `/#/success?eventId=${id}`
                 }}
               />

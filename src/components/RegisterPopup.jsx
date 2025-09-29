@@ -3,6 +3,8 @@ import './RegisterPopup.css'
 
 export default function RegisterPopup({
   tiers,
+  loading = false,
+  error = null,
   selectedTierId,
   quantity,
   onClose,
@@ -10,23 +12,31 @@ export default function RegisterPopup({
   onQuantityChange,
   onPay,
 }) {
-  const canPay = selectedTierId && quantity > 0
+  const canPay = !!selectedTierId && quantity > 0
 
   return (
     <div className="popup-overlay" onClick={onClose}>
       <div className="popup-modal" onClick={(e) => e.stopPropagation()}>
         <h3>Select Your Ticket</h3>
 
-        {tiers?.length ? tiers.map((tier) => (
-          <div
-            key={tier.id}
-            className={`ticket-tier ${selectedTierId === tier.id ? 'selected' : ''}`}
-            onClick={() => onSelectTier(tier.id)}
-          >
-            <div>{tier.name}</div>
-            <div>${tier.price}</div>
-          </div>
-        )) : <div className="empty-tiers">No tiers available.</div>}
+        {loading ? (
+          <div className="empty-tiers">Loading tiers…</div>
+        ) : error ? (
+          <div className="empty-tiers">Couldn’t load tiers. Try again.</div>
+        ) : tiers?.length ? (
+          tiers.map((tier) => (
+            <div
+              key={tier.id}
+              className={`ticket-tier ${selectedTierId === tier.id ? 'selected' : ''}`}
+              onClick={() => onSelectTier(tier.id)}
+            >
+              <div>{tier.name}</div>
+              <div>${Number(tier.price).toFixed(2)}</div>
+            </div>
+          ))
+        ) : (
+          <div className="empty-tiers">No tiers available.</div>
+        )}
 
         <div className="ticket-quantity">
           <label>Quantity</label>
@@ -34,7 +44,9 @@ export default function RegisterPopup({
             type="number"
             min="1"
             value={quantity}
-            onChange={(e) => onQuantityChange(Math.max(1, parseInt(e.target.value || '1', 10)))}
+            onChange={(e) =>
+              onQuantityChange(Math.max(1, parseInt(e.target.value || '1', 10)))
+            }
           />
         </div>
 
