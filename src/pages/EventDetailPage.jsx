@@ -187,7 +187,6 @@ export default function EventDetailPage() {
 >
   Register
 </button>        
-        <button className="btn-secondary">Contact</button>
           <button className="btn-secondary">Share</button>
         </div>
 
