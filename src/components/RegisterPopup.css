@@ -134,3 +134,8 @@
   cursor: not-allowed;
   filter: saturate(0.3) brightness(0.8);
 }
+
+.pay-buttons { margin-top: 16px; display: grid; gap: 10px; }
+.alt-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.btn-alt { padding: 10px 12px; border-radius: 10px; background: #1f2937; color: #fff; border: 1px solid #374151; }
+.btn-alt:disabled { opacity: .6; cursor: not-allowed; }

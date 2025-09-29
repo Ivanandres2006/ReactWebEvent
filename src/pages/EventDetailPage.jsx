@@ -190,10 +190,10 @@ export default function EventDetailPage() {
         return
       }
 
-      // manual methods
+      // manual methods -> go to success with pending banner
       if (data.manual === true) {
-        alert('We notified the organizer. You will get a confirmation shortly.')
-        setShowPopup(false)
+        const m = encodeURIComponent(body.paymentMethod)
+        window.location.href = `/#/success?eventId=${id}&pending=${m}`
         return
       }
 
@@ -201,7 +201,6 @@ export default function EventDetailPage() {
       if (data.clientSecret) {
         setClientSecret(data.clientSecret)
         setShowPopup(false)
-        // keep checkingOut locked until Stripe modal flow finishes
         return
       }
 
@@ -210,7 +209,6 @@ export default function EventDetailPage() {
       console.error('❌ Checkout failed:', err)
       alert('Checkout error. Try again.')
     } finally {
-      // If we did NOT open Stripe (clientSecret absent), unlock; otherwise Stripe flow will navigate on success.
       setCheckingOut(false)
       clickedOnceRef.current = false
     }
@@ -305,7 +303,7 @@ export default function EventDetailPage() {
           error={tiersErr}
           selectedTierId={selectedTierId}
           quantity={quantity}
-          submitting={checkingOut}           // 🟡 disable Pay while posting
+          submitting={checkingOut}
           onClose={() => {
             setShowPopup(false)
             setSelectedTierId(null)

@@ -7,7 +7,7 @@ export default function RegisterPopup({
   error = null,
   selectedTierId,
   quantity,
-  submitting = false,          // 🟡 new
+  submitting = false,          // disables every pay button while posting
   onClose,
   onSelectTier,
   onQuantityChange,
@@ -115,18 +115,44 @@ export default function RegisterPopup({
           />
         </div>
 
-        <button
-          className="buy-button"
-          disabled={!canPay}
-          onClick={() => onPay?.('card')} // never pass the click event
-          style={submitting ? { pointerEvents: 'none', opacity: 0.6 } : {}}
-        >
-          {submitting
-            ? 'Processing…'
-            : canPay
-              ? 'Pay'
-              : (selectedDisabled ? 'Tier unavailable' : 'Select a tier')}
-        </button>
+        {/* Payment buttons */}
+        <div className="pay-buttons">
+          <button
+            className="buy-button"
+            disabled={!canPay}
+            onClick={() => onPay?.('card')}
+            style={submitting ? { pointerEvents: 'none', opacity: 0.6 } : {}}
+          >
+            {submitting ? 'Processing…' : 'Pay with card'}
+          </button>
+
+          <div className="alt-grid">
+            <button
+              className="btn-alt"
+              disabled={!canPay}
+              onClick={() => onPay?.('pagoMovil')}
+              title="Pago Móvil"
+            >Pago Móvil</button>
+
+            <button
+              className="btn-alt"
+              disabled={!canPay}
+              onClick={() => onPay?.('zelle')}
+              title="Zelle"
+            >Zelle</button>
+
+            <button
+              className="btn-alt"
+              disabled={!canPay}
+              onClick={() => onPay?.('cash')}
+              title="Cash"
+            >Cash</button>
+          </div>
+
+          <p className="pay-hint">
+            Manual methods notify the organizer. You’ll get your ticket by email after they confirm.
+          </p>
+        </div>
       </div>
     </div>
   )

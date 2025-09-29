@@ -7,32 +7,22 @@ const API = 'https://backendevent-etce.onrender.com'
 
 function pickNewestBatch(eventTickets) {
   if (!Array.isArray(eventTickets) || eventTickets.length === 0) return []
-
-  // Normalize dates, pick best grouping key
   const groups = new Map()
   const getKey = (t) => {
-    // Prefer stable “same purchase” identifiers if present
     if (t.paymentIntentId) return `pi:${t.paymentIntentId}`
     if (t.orderId) return `order:${t.orderId}`
-
-    // Fallback: minute bucket of createdAt (many backends set same timestamp for a purchase)
     if (t.createdAt) {
       const d = new Date(t.createdAt)
-      const minuteKey = isNaN(d) ? null : d.toISOString().slice(0, 16) // yyyy-mm-ddThh:mm
+      const minuteKey = isNaN(d) ? null : d.toISOString().slice(0, 16)
       if (minuteKey) return `min:${minuteKey}`
     }
-
-    // Last resort: each ticket is its own group (will pick highest id below)
     return `id:${t.id}`
   }
-
   for (const t of eventTickets) {
     const k = getKey(t)
     if (!groups.has(k)) groups.set(k, [])
     groups.get(k).push(t)
   }
-
-  // Rank groups: newest by createdAt (max), then by max id
   const rank = (arr) => {
     const createdMax = arr.reduce((m, t) => {
       const d = t.createdAt ? new Date(t.createdAt).getTime() : 0
@@ -41,7 +31,6 @@ function pickNewestBatch(eventTickets) {
     const idMax = arr.reduce((m, t) => Math.max(m, Number(t.id) || 0), 0)
     return { createdMax, idMax }
   }
-
   let best = null
   for (const [, arr] of groups) {
     const r = rank(arr)
@@ -57,6 +46,7 @@ function pickNewestBatch(eventTickets) {
 export default function SuccessPage() {
   const [params] = useSearchParams()
   const eventId = Number(params.get('eventId'))
+  const pending = (params.get('pending') || '').toLowerCase() // 'pagomovil' | 'zelle' | 'cash' | ''
   const navigate = useNavigate()
 
   const token = localStorage.getItem('token') || ''
@@ -89,15 +79,21 @@ export default function SuccessPage() {
     run()
   }, [email, token, eventId])
 
-  // Fail-safe: if nothing shows, auto-return after 10s
+  // If nothing to show, bounce back after 10s (only when not pending)
   useEffect(() => {
     const list = showAll ? tickets : latestTickets
-    if (loading || error || (list && list.length)) return
+    if (pending || loading || error || (list && list.length)) return
     const t = setTimeout(() => navigate(`/event/${eventId}`), 10000)
     return () => clearTimeout(t)
-  }, [loading, error, tickets, latestTickets, showAll, eventId, navigate])
+  }, [pending, loading, error, tickets, latestTickets, showAll, eventId, navigate])
 
   const visible = showAll ? tickets : latestTickets
+
+  const pendingPretty =
+    pending === 'pagomovil' ? 'Pago Móvil'
+    : pending === 'zelle' ? 'Zelle'
+    : pending === 'cash' ? 'Cash'
+    : ''
 
   return (
     <div className="success-page">
@@ -105,9 +101,18 @@ export default function SuccessPage() {
         <div className="status-bar">
           <span className="status-dot" />
           <div className="status-text">
-            <div className="status-strong">Payment successful</div>
+            <div className="status-strong">
+              {pendingPretty ? 'Payment request sent' : 'Payment successful'}
+            </div>
             <div className="status-sub">
-              Confirmation sent to <span className="status-email">{email || 'your email'}</span>
+              {pendingPretty ? (
+                <>
+                  We <strong>notified the organizer</strong> about your {pendingPretty} payment.
+                  You’ll receive an email with your ticket as soon as they confirm it.
+                </>
+              ) : (
+                <>Confirmation sent to <span className="status-email">{email || 'your email'}</span></>
+              )}
             </div>
           </div>
           <div className="status-actions">
@@ -126,10 +131,14 @@ export default function SuccessPage() {
         </div>
 
         <div className="tickets-grid">
-          {loading && <p className="hint">Loading your ticket…</p>}
+          {loading && <p className="hint">Checking for your ticket…</p>}
           {error && <p className="hint hint-error">{error}</p>}
           {!loading && !error && visible.length === 0 && (
-            <p className="hint">We couldn’t display your ticket here, but it’s in your email.</p>
+            <p className="hint">
+              {pendingPretty
+                ? 'Your ticket will appear here after the organizer confirms your payment.'
+                : 'We couldn’t display your ticket here, but it’s in your email.'}
+            </p>
           )}
 
           {visible.map(t => (
@@ -137,7 +146,6 @@ export default function SuccessPage() {
           ))}
         </div>
 
-        {/* optional: quick toggle to view all historical tickets for this event */}
         {tickets.length > latestTickets.length && (
           <div className="toggle-all">
             <button className="btn btn-ghost" onClick={() => setShowAll(v => !v)}>
