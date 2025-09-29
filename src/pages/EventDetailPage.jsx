@@ -48,13 +48,6 @@ export default function EventDetailPage() {
     if (refCode) localStorage.setItem('wknd_ref', refCode)
   }, [refCode])
 
-  // Require login immediately
-  useEffect(() => {
-    if (!isLoggedIn) {
-      setShowAuth(true)
-    }
-  }, [isLoggedIn])
-
   // Load user email (requires auth)
   useEffect(() => {
     if (!isLoggedIn) return
@@ -80,22 +73,11 @@ export default function EventDetailPage() {
       .catch(() => {})
   }, [isLoggedIn, token])
 
-  // Load event (requires auth)
   useEffect(() => {
-    if (!id || !isLoggedIn) return
-    ;(async () => {
+    if (!id) return
+    (async () => {
       try {
-        const res = await fetch(`${API}/events/${id}`, {
-          headers: { Authorization: `Bearer ${token}` },
-        })
-        if (res.status === 401) {
-          const text = await res.text()
-          if (text.includes('JWT expired')) {
-            localStorage.removeItem('token')
-          }
-          setShowAuth(true)
-          return
-        }
+        const res = await fetch(`${API}/events/${id}`)
         if (!res.ok) throw new Error(`Failed to fetch event: ${res.status}`)
         const data = await res.json()
         if (!data?.title) throw new Error('Invalid event data')
@@ -105,7 +87,7 @@ export default function EventDetailPage() {
         setError(true)
       }
     })()
-  }, [id, isLoggedIn, token])
+  }, [id])  
 
   const handleBuy = async () => {
     if (!isLoggedIn) return setShowAuth(true)
@@ -169,8 +151,7 @@ export default function EventDetailPage() {
   }
 
   if (error) return <div className="event-error">Failed to load event. Please try again later.</div>
-  if (!event || !email) return <div className="event-loading">Loading event...</div>
-
+  if (!event) return <div className="event-loading">Loading event...</div>
   return (
     <div className="event-fullscreen">
       <a
@@ -200,8 +181,13 @@ export default function EventDetailPage() {
         <p className="event-location">📍 {event?.location || ''}</p>
 
         <div className="event-actions">
-          <button className="btn-primary" onClick={() => setShowPopup(true)}>+ Register</button>
-          <button className="btn-secondary">Contact</button>
+        <button
+   className="btn-primary"
+   onClick={() => (isLoggedIn ? setShowPopup(true) : setShowAuth(true))}
+>
+  Register
+</button>        
+        <button className="btn-secondary">Contact</button>
           <button className="btn-secondary">Share</button>
         </div>
 
