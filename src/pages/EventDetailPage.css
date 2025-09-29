@@ -1,62 +1,68 @@
+/* ===== Global document scrolling ===== */
 html, body, #root {
   height: auto;
   min-height: 100%;
-  overflow-y: auto;
-  overflow-x: hidden;
-  -webkit-overflow-scrolling: touch;
-}
-
-body {
-  min-height: 100vh;
-  margin: 0;
-  padding: 0;
-  background: #0A0A23;
-  font-family: 'Inter', sans-serif;
-  color: white;
+  overflow-y: auto;              /* let the document own vertical scroll */
   overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
 }
 
 html {
   scroll-behavior: smooth;
-  overflow-x: hidden;
   height: 100%;
+  overflow-x: hidden;
   scrollbar-color: #ffffff #0A0A23;
 }
 
+body {
+  min-height: 100dvh;            /* dynamic viewport fixes iOS address bar jump */
+  margin: 0;
+  padding: 0;
+  background: #0A0A23;
+  font-family: 'Inter', sans-serif;
+  color: white;
+  overflow-x: hidden;
+}
+
+/* ===== Page wrapper (does NOT trap scroll) ===== */
 .event-fullscreen {
   min-height: 100dvh;
   width: 100%;
   background: linear-gradient(to bottom, #0A0A23 0%, #000000 100%);
-  overflow: visible;            /* let the document handle scroll */
+  overflow: visible;             /* allow page to scroll naturally */
   position: relative;
   padding-top: 24px;
 }
 
+/* ===== Leaflet map: allow normal touch panning without killing page scroll ===== */
 .leaflet-container {
   touch-action: pan-x pan-y;
+  width: 100%;
+  height: 250px;
+  border-radius: 16px;
+  overflow: hidden;
+  margin-top: 10px;
 }
 
-/* Apple App Icon Link */
+/* ===== App Store icon ===== */
 .event-app-download {
   position: fixed;
   top: 20px;
   right: 20px;
   z-index: 1000;
 }
-
 .event-app-download img {
   width: 32px;
   height: 32px;
   cursor: pointer;
 }
 
+/* ===== Top hero ===== */
 .event-top-section {
   display: flex;
   justify-content: center;
   padding-top: 16px;
 }
-
 .event-hero-image {
   width: 90%;
   max-width: 600px;
@@ -67,28 +73,17 @@ html {
   display: block;
 }
 
-.popup-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0,0,0,.55);
-  overflow: auto;               /* modal can scroll */
-  -webkit-overflow-scrolling: touch;
-  z-index: 9999;
-}
-.popup-modal {
-  max-height: 90dvh;
-  overflow: auto;
-}
-
+/* ===== Centered status messages ===== */
 .event-error,
-.event-loading{
+.event-loading {
   position: absolute;
   left: 50%;
   top: 50%;
   transform: translate(-50%, -50%);
-  font-size: 40;
+  font-size: 40px;
 }
 
+/* ===== Main content ===== */
 .event-content {
   width: 100%;
   max-width: 700px;
@@ -125,7 +120,6 @@ html {
   flex-wrap: wrap;
 }
 
-
 .btn-primary,
 .btn-secondary {
   padding: 12px 20px;
@@ -137,24 +131,22 @@ html {
   min-width: 120px;
   transition: transform 0.2s ease;
 }
-
 .btn-primary {
   background: #00E676;
   color: black;
   box-shadow: 0 0 10px #00E676aa;
 }
-
 .btn-secondary {
   background: #14142B;
   color: white;
   border: 1px solid #333;
 }
-
 .btn-primary:hover,
 .btn-secondary:hover {
   transform: scale(1.03);
 }
 
+/* ===== Cards ===== */
 .event-about,
 .event-map {
   width: 100%;
@@ -166,7 +158,6 @@ html {
   backdrop-filter: blur(12px);
   box-shadow: 0 8px 30px rgba(0, 0, 0, 0.3);
 }
-
 .event-about h3,
 .event-map h3 {
   font-size: 20px;
@@ -175,19 +166,10 @@ html {
   margin-bottom: 10px;
   text-align: left;
 }
-
 .event-about p {
   font-size: 15px;
   color: #ddd;
   text-align: left;
-}
-
-.leaflet-container {
-  width: 100%;
-  height: 250px;
-  border-radius: 16px;
-  overflow: hidden;
-  margin-top: 10px;
 }
 
 .map-placeholder {
@@ -202,6 +184,7 @@ html {
   font-size: 15px;
 }
 
+/* ===== Email input (if used) ===== */
 .event-email-input input {
   width: 100%;
   margin-top: 20px;
@@ -213,16 +196,30 @@ html {
   font-size: 15px;
 }
 
+/* ===== Modal (Stripe/Register/Auth) ===== */
+.popup-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.55);
+  overflow: auto;               /* modal itself can scroll */
+  -webkit-overflow-scrolling: touch;
+  z-index: 9999;
+}
+.popup-modal {
+  max-height: 90dvh;
+  overflow: auto;
+  margin: 40px auto;
+  background: #111827;
+  border-radius: 16px;
+  padding: 20px;
+  width: min(640px, 92vw);
+}
+
+/* ===== Mobile tweaks ===== */
 @media (max-width: 768px) {
-  .event-title {
-    font-size: 26px;
-  }
-
+  .event-title { font-size: 26px; }
   .event-about,
-  .event-map {
-    padding: 20px;
-  }
-
+  .event-map { padding: 20px; }
   .event-hero-image {
     width: 90%;
     max-width: 100%;
