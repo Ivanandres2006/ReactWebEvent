@@ -7,11 +7,11 @@ export default function WebTicketCard({ ticket, apiBase, token }) {
 
   useEffect(() => {
     let revoke
-    const run = async () => {
+    ;(async () => {
       try {
         setError(null)
         const res = await fetch(`${apiBase}/api/tickets/qr/${ticket.id}`, {
-          headers: token ? { Authorization: `Bearer ${token}` } : {}
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
         })
         if (!res.ok) throw new Error('QR error')
         const blob = await res.blob()
@@ -21,8 +21,7 @@ export default function WebTicketCard({ ticket, apiBase, token }) {
       } catch {
         setError('Could not load QR')
       }
-    }
-    run()
+    })()
     return () => { if (revoke) URL.revokeObjectURL(revoke) }
   }, [apiBase, token, ticket.id])
 
@@ -31,18 +30,16 @@ export default function WebTicketCard({ ticket, apiBase, token }) {
       setDownloading(true)
       setError(null)
       const res = await fetch(`${apiBase}/api/passes/ticket/${ticket.id}`, {
-        headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}), Accept: 'application/vnd.apple.pkpass' }
+        headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}), Accept: 'application/vnd.apple.pkpass' },
       })
       if (!res.ok) throw new Error('pkpass error')
       let buf = await res.arrayBuffer()
-
-      // may be JSON-wrapped { pkpass: base64 }
+      // handle optional { pkpass: base64 } wrapper
       try {
         const text = new TextDecoder().decode(buf)
         const j = JSON.parse(text)
         if (j?.pkpass) buf = Uint8Array.from(atob(j.pkpass), c => c.charCodeAt(0)).buffer
-      } catch { /* not JSON */ }
-
+      } catch {}
       const blob = new Blob([buf], { type: 'application/vnd.apple.pkpass' })
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
@@ -62,31 +59,31 @@ export default function WebTicketCard({ ticket, apiBase, token }) {
       <div className="flex items-center justify-between">
         <div className="text-sm">
           <div className="text-white/60 uppercase tracking-wide">Ticket</div>
-          <div className="font-semibold text-lg">{ticket.tierName || 'General'}</div>
+          <div className="font-semibold">{ticket.tierName || 'General'}</div>
         </div>
         <div className="text-white/60 text-sm">#{ticket.id}</div>
       </div>
 
       <div className="mt-3 flex items-center justify-center">
         {qrUrl ? (
-          <img src={qrUrl} alt="Ticket QR" className="w-44 h-44 object-contain rounded-md bg-black/60 p-2" />
+          <img src={qrUrl} alt="Ticket QR" className="w-40 h-40 object-contain rounded-md bg-black/60 p-2" />
         ) : (
-          <div className="w-44 h-44 grid place-items-center rounded-md bg-black/60 text-white/60 text-sm">
+          <div className="w-40 h-40 grid place-items-center rounded-md bg-black/60 text-white/60 text-xs">
             {error || 'Loading QR…'}
           </div>
         )}
       </div>
 
-      <div className="mt-4 grid grid-cols-2 gap-2">
+      <div className="mt-3 grid grid-cols-2 gap-2">
         <button
-          className="px-3 py-2 rounded-lg bg-[#00E676] text-black font-semibold hover:brightness-95 transition text-sm"
+          className="px-3 py-2 rounded-lg bg-[#00E676] text-black font-semibold hover:brightness-95 transition text-xs"
           onClick={downloadPkPass}
           disabled={downloading}
         >
           {downloading ? 'Preparing…' : 'Add to Wallet'}
         </button>
         <button
-          className="px-3 py-2 rounded-lg bg-white/10 border border-white/10 hover:bg-white/15 transition text-sm"
+          className="px-3 py-2 rounded-lg bg-white/10 border border-white/10 hover:bg-white/15 transition text-xs"
           onClick={() => window.print()}
         >
           Print
