@@ -10,7 +10,7 @@ export default function RegisterPopup({
   onClose,
   onSelectTier,
   onQuantityChange,
-  onPay,
+  onPay, // function(method?: 'card'|'zelle'|'pagoMovil'|'cash')
 }) {
   const fmtPrice = (n) => `$${Number(n || 0).toFixed(2)}`
   const splitDescription = (txt) => {
@@ -114,7 +114,12 @@ export default function RegisterPopup({
           />
         </div>
 
-        <button className="buy-button" disabled={!canPay} onClick={onPay}>
+        {/* ✅ WRAP the call so we don't pass the click event object */}
+        <button
+          className="buy-button"
+          disabled={!canPay}
+          onClick={() => onPay?.('card')}   // default method can be changed to show options
+        >
           {canPay ? 'Pay' : (selectedDisabled ? 'Tier unavailable' : 'Select a tier')}
         </button>
       </div>

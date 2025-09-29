@@ -16,7 +16,6 @@ export default function StripeCardForm({ clientSecret, email, onSuccess }) {
       headers: token ? { Authorization: `Bearer ${token}` } : {},
     })
 
-    // bubble up API errors if any
     try {
       const j = await res.json()
       if (!res.ok || j?.error) throw new Error(j?.error || `Confirm failed (${res.status})`)
@@ -52,7 +51,7 @@ export default function StripeCardForm({ clientSecret, email, onSuccess }) {
       return
     }
 
-    // Treat 'succeeded' and 'processing' as success → finalize on backend
+    // Succeeded or processing -> finalize on backend
     if (pi.status === 'succeeded' || pi.status === 'processing') {
       try {
         await confirmOnBackend(pi.id)

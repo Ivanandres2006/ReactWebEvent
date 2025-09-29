@@ -40,6 +40,7 @@ export default function EventDetailPage() {
   const [showPopup, setShowPopup] = useState(false)
   const [clientSecret, setClientSecret] = useState(null)
 
+  // dedicated tiers state
   const [tiers, setTiers] = useState([])
   const [tiersLoading, setTiersLoading] = useState(false)
   const [tiersErr, setTiersErr] = useState(null)
@@ -47,17 +48,21 @@ export default function EventDetailPage() {
   const token = localStorage.getItem('token')
   const isLoggedIn = !!(token && token.length > 0)
 
+  // Persist ref so it survives login/reload
   useEffect(() => {
     if (refCode) localStorage.setItem('wknd_ref', refCode)
   }, [refCode])
 
+  // Load user email (requires auth)
   useEffect(() => {
     if (!isLoggedIn) return
     fetch(`${API}/user/me`, { headers: { Authorization: `Bearer ${token}` } })
       .then(async res => {
         if (res.status === 401) {
           const txt = await res.text()
-          if (txt.includes('JWT expired')) localStorage.removeItem('token')
+          if (txt.includes('JWT expired')) {
+            localStorage.removeItem('token')
+          }
           setShowAuth(true)
           return Promise.reject(new Error('401'))
         }
@@ -73,9 +78,10 @@ export default function EventDetailPage() {
       .catch(() => {})
   }, [isLoggedIn, token])
 
+  // Load event (public)
   useEffect(() => {
     if (!id) return
-    ;(async () => {
+    (async () => {
       try {
         const res = await fetch(`${API}/events/${id}`)
         if (!res.ok) throw new Error(`Failed to fetch event: ${res.status}`)
@@ -89,6 +95,7 @@ export default function EventDetailPage() {
     })()
   }, [id])
 
+  // Load ticket tiers when popup opens (and remember last picked)
   useEffect(() => {
     if (!showPopup || !id) return
     const lsKey = `lastTier:${id}`
@@ -120,6 +127,7 @@ export default function EventDetailPage() {
 
         if (!res.ok) throw new Error(`Tiers fetch failed: ${res.status}`)
         const data = await res.json()
+
         const list = Array.isArray(data) ? data : []
         const finalList = list.length ? list : (event?.ticketTiers || [])
         setTiers(finalList)
@@ -146,8 +154,7 @@ export default function EventDetailPage() {
 
   /**
    * Handle checkout for multiple methods. `method` can be:
-   * 'card' | 'zelle' | 'pagoMovil' | 'cash'
-   * (defaults to 'card' for backward compatibility with RegisterPopup)
+   * 'card' | 'zelle' | 'pagoMovil' | 'cash'  (default 'card')
    */
   const handleBuy = async (method = 'card') => {
     if (!isLoggedIn) return setShowAuth(true)
@@ -166,7 +173,7 @@ export default function EventDetailPage() {
         quantity,
         email,
         ref: refCode || storedRef || null,
-        paymentMethod: method, // 👈 important
+        paymentMethod: typeof method === 'string' ? method : 'card', // guard
       }
 
       const res = await fetch(`${API}/api/tickets/checkout`, {
@@ -186,7 +193,7 @@ export default function EventDetailPage() {
         return
       }
 
-      // manual methods (zelle/pagoMovil/cash) may return {manual:true}
+      // manual methods
       if (data.manual === true) {
         alert('We notified the organizer. You will get a confirmation shortly.')
         setShowPopup(false)
@@ -206,6 +213,7 @@ export default function EventDetailPage() {
     }
   }
 
+  // UI states
   if (showAuth && !isLoggedIn) {
     return (
       <AuthModal
@@ -304,8 +312,8 @@ export default function EventDetailPage() {
             try { localStorage.setItem(`lastTier:${id}`, String(tierId)) } catch {}
           }}
           onQuantityChange={setQuantity}
-          // If your popup passes a method, we accept it. If not, defaults to 'card'.
-          onPay={(method) => handleBuy(method)}
+          // If popup supplies a method, we use it. Otherwise defaults to 'card'.
+          onPay={(method) => handleBuy(method ?? 'card')}
         />
       )}
 
@@ -317,7 +325,6 @@ export default function EventDetailPage() {
                 clientSecret={clientSecret}
                 email={email}
                 onSuccess={async (paymentIntentId) => {
-                  // confirm on backend WITH auth (if available)
                   const token = localStorage.getItem('token') || ''
                   await fetch(`${API}/api/tickets/confirm?paymentIntentId=${encodeURIComponent(paymentIntentId)}`, {
                     method: 'POST',
