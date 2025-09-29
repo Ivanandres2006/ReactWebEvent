@@ -62,7 +62,7 @@ export default function SuccessPage() {
             >
               Open Gmail
             </a>
-            <Link className="btn btn-xs btn-accent" to={`/event/${eventId}`}>
+            <Link className="btn btn-xs btn-accent" to={`/events/${eventId}`}>
               Back to event
             </Link>
           </div>
