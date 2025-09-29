@@ -23,11 +23,13 @@ L.Icon.Default.mergeOptions({
 })
 
 const stripePromise = loadStripe('pk_test_51RcVeBBU1Fa59mBKHvngFVDwq8gBiZ863TKO6okEHBj28VjLiYAUQ5OhDs0k1WEyfqXRmtziurmLYBqlQfyOOl6C007EKiWppc')
+const API = 'https://backendevent-etce.onrender.com'
 
 export default function EventDetailPage() {
   const { id } = useParams()
   const [searchParams] = useSearchParams()
-  const refCode = searchParams.get('ref')
+  const rawRef = searchParams.get('ref')
+  const refCode = rawRef ? decodeURIComponent(rawRef) : null
 
   const [event, setEvent] = useState(null)
   const [error, setError] = useState(false)
@@ -39,84 +41,73 @@ export default function EventDetailPage() {
   const [clientSecret, setClientSecret] = useState(null)
 
   const token = localStorage.getItem('token')
-  const isLoggedIn = token && token.length > 0
+  const isLoggedIn = !!(token && token.length > 0)
 
+  // Persist ref so it survives login/reload
   useEffect(() => {
-    if (!token) return
+    if (refCode) localStorage.setItem('wknd_ref', refCode)
+  }, [refCode])
 
-    fetch('https://backendevent-etce.onrender.com/user/me', {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    })
-      .then(res => {
+  // Require login immediately
+  useEffect(() => {
+    if (!isLoggedIn) {
+      setShowAuth(true)
+    }
+  }, [isLoggedIn])
+
+  // Load user email (requires auth)
+  useEffect(() => {
+    if (!isLoggedIn) return
+    fetch(`${API}/user/me`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(async res => {
+        if (res.status === 401) {
+          const txt = await res.text()
+          if (txt.includes('JWT expired')) {
+            localStorage.removeItem('token')
+          }
+          setShowAuth(true)
+          return Promise.reject(new Error('401'))
+        }
         if (!res.ok) throw new Error('Failed to fetch user')
         return res.json()
       })
       .then(data => {
-        if (data.email) {
+        if (data?.email) {
           setEmail(data.email)
           localStorage.setItem('email', data.email)
         }
       })
-      .catch(err => {
-        console.error('❌ Failed to fetch user info:', err)
-      })
-  }, [token])
+      .catch(() => {})
+  }, [isLoggedIn, token])
 
+  // Load event (requires auth)
   useEffect(() => {
-    if (!id) return
-
-(async () => {
-  try {
-    // Try public first
-    let res = await fetch(`https://backendevent-etce.onrender.com/events/${id}`)
-    if (res.status === 401 && token) {
-      // fallback to auth if your backend requires it
-      res = await fetch(`https://backendevent-etce.onrender.com/events/${id}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-      if (res.status === 401) setShowAuth(true)
-    }
-    if (!res.ok) throw new Error(`Failed to fetch event: ${res.status}`)
-    const data = await res.json()
-    setEvent(data)
-  } catch (e) {
-    console.error('❌ Event load error:', e)
-    setError(true)
-  }
-})()
-      .then(async res => {
+    if (!id || !isLoggedIn) return
+    ;(async () => {
+      try {
+        const res = await fetch(`${API}/events/${id}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        })
         if (res.status === 401) {
-          const errorText = await res.text()
-          if (errorText.includes('JWT expired')) {
-            console.warn('🔐 JWT expired — showing auth modal')
+          const text = await res.text()
+          if (text.includes('JWT expired')) {
             localStorage.removeItem('token')
-            setShowAuth(true)
-            return
           }
-        }
-        if (!res.ok) throw new Error(`Failed to fetch event: ${res.status}`)
-        return res.json()
-      })
-      .then(data => {
-        if (!data || !data.title) throw new Error('Invalid event data')
-        setEvent(data)
-      })
-      .catch(err => {
-        console.error('❌ Event load error:', err)
-        if (err.message.includes('401')) {
-          localStorage.removeItem('token')
           setShowAuth(true)
           return
         }
+        if (!res.ok) throw new Error(`Failed to fetch event: ${res.status}`)
+        const data = await res.json()
+        if (!data?.title) throw new Error('Invalid event data')
+        setEvent(data)
+      } catch (e) {
+        console.error('❌ Event load error:', e)
         setError(true)
-      })
-  }, [id, token])
+      }
+    })()
+  }, [id, isLoggedIn, token])
 
   const handleBuy = async () => {
-    console.log('✅ handleBuy triggered')
-
     if (!isLoggedIn) return setShowAuth(true)
     if (!email) {
       alert('Email not available. Please log in again.')
@@ -126,17 +117,16 @@ export default function EventDetailPage() {
     if (!selectedTierId) return alert('Please select a ticket tier')
 
     try {
+      const storedRef = localStorage.getItem('wknd_ref')
       const body = {
         eventId: parseInt(id),
         ticketTierId: selectedTierId,
         quantity,
         email,
-        ref: refCode,
+        ref: refCode || storedRef || null,
       }
 
-      console.log('Sending checkout request with body:', body)
-
-      const res = await fetch(`https://backendevent-etce.onrender.com/api/tickets/checkout`, {
+      const res = await fetch(`${API}/api/tickets/checkout`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -144,15 +134,14 @@ export default function EventDetailPage() {
         },
         body: JSON.stringify(body),
       })
-
       const data = await res.json()
-      console.log('💬 Checkout response:', data)
 
-if (data.free === true || data.free === 'true') {
-  window.location.href = `/success?eventId=${id}`
-  return
-}
-
+      // free can be boolean or string
+      if (data.free === true || data.free === 'true') {
+        // If using HashRouter, use "/#/success..."; if BrowserRouter, use "/success..."
+        window.location.href = `/#/success?eventId=${id}`
+        return
+      }
 
       if (data.clientSecret) {
         setClientSecret(data.clientSecret)
@@ -164,6 +153,19 @@ if (data.free === true || data.free === 'true') {
       console.error('❌ Checkout failed:', err)
       alert('Checkout error. Try again.')
     }
+  }
+
+  // UI states
+  if (showAuth && !isLoggedIn) {
+    return (
+      <AuthModal
+        onClose={() => {
+          setShowAuth(false)
+          // reload so effects re-run with the new token
+          window.location.reload()
+        }}
+      />
+    )
   }
 
   if (error) return <div className="event-error">Failed to load event. Please try again later.</div>
@@ -250,34 +252,24 @@ if (data.free === true || data.free === 'true') {
         />
       )}
 
-
-{clientSecret && (
-  <div className="popup-overlay" onClick={() => setClientSecret(null)}>
-    <div className="popup-modal" onClick={(e) => e.stopPropagation()}>
-      <Elements stripe={stripePromise} options={{ clientSecret }}>
-        <StripeCardForm
-          clientSecret={clientSecret}
-          email={email}
-          onSuccess={async (paymentIntentId) => {
-            await fetch(`https://backendevent-etce.onrender.com/api/tickets/confirm?paymentIntentId=${paymentIntentId}`, {
-              method: 'POST',
-            })
-            window.location.href = `/success?eventId=${id}`
-          }}
-        />
-      </Elements>
-    </div>
-  </div>
-)}
-
-
-      {showAuth && (
-        <AuthModal
-          onClose={() => {
-            setShowAuth(false)
-            window.location.reload()
-          }}
-        />
+      {clientSecret && (
+        <div className="popup-overlay" onClick={() => setClientSecret(null)}>
+          <div className="popup-modal" onClick={(e) => e.stopPropagation()}>
+            <Elements stripe={stripePromise} options={{ clientSecret }}>
+              <StripeCardForm
+                clientSecret={clientSecret}
+                email={email}
+                onSuccess={async (paymentIntentId) => {
+                  await fetch(`${API}/api/tickets/confirm?paymentIntentId=${paymentIntentId}`, {
+                    method: 'POST',
+                  })
+                  // If using HashRouter, use "/#/success..."; if BrowserRouter, use "/success..."
+                  window.location.href = `/#/success?eventId=${id}`
+                }}
+              />
+            </Elements>
+          </div>
+        </div>
       )}
     </div>
   )
