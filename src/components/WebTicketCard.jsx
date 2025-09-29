@@ -1,4 +1,3 @@
-// src/components/WebTicketCard.jsx
 import { useEffect, useState } from 'react'
 
 export default function WebTicketCard({ ticket, apiBase, token }) {
@@ -8,7 +7,7 @@ export default function WebTicketCard({ ticket, apiBase, token }) {
 
   // Fetch QR (auth header → blob → objectURL)
   useEffect(() => {
-    let revoked
+    let revoke
     const run = async () => {
       try {
         setError(null)
@@ -19,13 +18,13 @@ export default function WebTicketCard({ ticket, apiBase, token }) {
         const blob = await res.blob()
         const url = URL.createObjectURL(blob)
         setQrUrl(url)
-        revoked = url
-      } catch (e) {
+        revoke = url
+      } catch {
         setError('Could not load QR')
       }
     }
     run()
-    return () => { if (revoked) URL.revokeObjectURL(revoked) }
+    return () => { if (revoke) URL.revokeObjectURL(revoke) }
   }, [apiBase, token, ticket.id])
 
   const downloadPkPass = async () => {
@@ -41,15 +40,15 @@ export default function WebTicketCard({ ticket, apiBase, token }) {
       if (!res.ok) throw new Error(`pkpass ${res.status}`)
       let data = await res.arrayBuffer()
 
-      // Server may wrap in JSON {pkpass: base64}
+      // Server may wrap in JSON { pkpass: base64 }
       try {
         const text = new TextDecoder().decode(data)
-        const maybeJson = JSON.parse(text)
-        if (maybeJson?.pkpass) {
-          data = Uint8Array.from(atob(maybeJson.pkpass), c => c.charCodeAt(0)).buffer
+        const maybe = JSON.parse(text)
+        if (maybe?.pkpass) {
+          data = Uint8Array.from(atob(maybe.pkpass), c => c.charCodeAt(0)).buffer
         }
       } catch {
-        // not JSON → already .pkpass bytes
+        // not JSON
       }
 
       const blob = new Blob([data], { type: 'application/vnd.apple.pkpass' })
@@ -61,7 +60,7 @@ export default function WebTicketCard({ ticket, apiBase, token }) {
       a.click()
       a.remove()
       URL.revokeObjectURL(url)
-    } catch (e) {
+    } catch {
       setError('Could not download Wallet pass')
     } finally {
       setDownloading(false)
@@ -69,16 +68,16 @@ export default function WebTicketCard({ ticket, apiBase, token }) {
   }
 
   return (
-    <div className="rounded-2xl p-5 bg-white/5 border border-white/10 text-left">
-      <div className="flex items-center justify-between mb-4">
+    <div className="rounded-2xl p-5 bg-white/5 border border-white/10 backdrop-blur-sm">
+      <div className="flex items-start justify-between gap-4">
         <div>
-          <div className="text-sm uppercase tracking-wide text-white/60">Ticket</div>
-          <div className="text-xl font-semibold">{ticket.tierName || 'General'}</div>
+          <div className="text-xs uppercase tracking-wide text-white/60">Ticket</div>
+          <div className="text-lg font-semibold">{ticket.tierName || 'General'}</div>
         </div>
-        <div className="text-white/70">#{ticket.id}</div>
+        <div className="text-white/60 text-sm">#{ticket.id}</div>
       </div>
 
-      <div className="flex items-center justify-center">
+      <div className="mt-4 flex items-center justify-center">
         {qrUrl ? (
           <img
             src={qrUrl}
@@ -94,21 +93,21 @@ export default function WebTicketCard({ ticket, apiBase, token }) {
 
       <div className="mt-5 grid grid-cols-2 gap-3">
         <button
-          className="px-4 py-2 rounded-lg bg-neonGreen text-black font-semibold"
+          className="px-4 py-2 rounded-lg bg-[#00E676] text-black font-semibold hover:brightness-95 transition"
           onClick={downloadPkPass}
           disabled={downloading}
         >
-          {downloading ? 'Preparing…' : 'Add to Wallet (.pkpass)'}
+          {downloading ? 'Preparing…' : 'Add to Wallet'}
         </button>
         <button
-          className="px-4 py-2 rounded-lg bg-white/10 border border-white/10"
+          className="px-4 py-2 rounded-lg bg-white/10 border border-white/10 hover:bg-white/15 transition"
           onClick={() => window.print()}
         >
           Print
         </button>
       </div>
 
-      <p className="text-white/60 text-xs mt-3">
+      <p className="text-white/55 text-xs mt-3">
         Present this QR at the entrance. Keep the Wallet pass or email as backup.
       </p>
     </div>
