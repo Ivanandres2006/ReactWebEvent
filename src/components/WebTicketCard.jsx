@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import './WebTicketCard.css'
 
 export default function WebTicketCard({ ticket, apiBase, token }) {
   const [qrUrl, setQrUrl] = useState(null)
@@ -39,7 +40,7 @@ export default function WebTicketCard({ ticket, apiBase, token }) {
         const text = new TextDecoder().decode(buf)
         const j = JSON.parse(text)
         if (j?.pkpass) buf = Uint8Array.from(atob(j.pkpass), c => c.charCodeAt(0)).buffer
-      } catch {}
+      } catch {/* bytes already */}
       const blob = new Blob([buf], { type: 'application/vnd.apple.pkpass' })
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
@@ -55,40 +56,35 @@ export default function WebTicketCard({ ticket, apiBase, token }) {
   }
 
   return (
-    <div className="rounded-xl border border-white/10 bg-white/5 p-4">
-      <div className="flex items-center justify-between">
-        <div className="text-sm">
-          <div className="text-white/60 uppercase tracking-wide">Ticket</div>
-          <div className="font-semibold">{ticket.tierName || 'General'}</div>
+    <div className="ticket-card">
+      <div className="ticket-head">
+        <div>
+          <div className="ticket-label">Ticket</div>
+          <div className="ticket-tier">{ticket.tierName || 'General'}</div>
         </div>
-        <div className="text-white/60 text-sm">#{ticket.id}</div>
+        <div className="ticket-id">#{ticket.id}</div>
       </div>
 
-      <div className="mt-3 flex items-center justify-center">
+      <div className="qr-wrapper">
         {qrUrl ? (
-          <img src={qrUrl} alt="Ticket QR" className="w-40 h-40 object-contain rounded-md bg-black/60 p-2" />
+          <img src={qrUrl} alt="Ticket QR" className="qr-img" />
         ) : (
-          <div className="w-40 h-40 grid place-items-center rounded-md bg-black/60 text-white/60 text-xs">
-            {error || 'Loading QR…'}
-          </div>
+          <div className="qr-placeholder">{error || 'Loading QR…'}</div>
         )}
       </div>
 
-      <div className="mt-3 grid grid-cols-2 gap-2">
-        <button
-          className="px-3 py-2 rounded-lg bg-[#00E676] text-black font-semibold hover:brightness-95 transition text-xs"
-          onClick={downloadPkPass}
-          disabled={downloading}
-        >
+      <div className="ticket-actions">
+        <button className="btn btn-primary" onClick={downloadPkPass} disabled={downloading}>
           {downloading ? 'Preparing…' : 'Add to Wallet'}
         </button>
-        <button
-          className="px-3 py-2 rounded-lg bg-white/10 border border-white/10 hover:bg-white/15 transition text-xs"
-          onClick={() => window.print()}
-        >
+        <button className="btn btn-outline" onClick={() => window.print()}>
           Print
         </button>
       </div>
+
+      <p className="ticket-note">
+        Present this QR at the entrance. Keep the Wallet pass or email as backup.
+      </p>
     </div>
   )
 }

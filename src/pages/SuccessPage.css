@@ -1,0 +1,87 @@
+:root{
+    --bg:#0A0F2C;
+    --panel:rgba(255,255,255,.06);
+    --line:rgba(255,255,255,.1);
+    --text:#fff;
+    --muted:rgba(255,255,255,.7);
+    --accent:#00E676;
+  }
+  
+  .success-page{
+    min-height:100vh;
+    background:var(--bg);
+    color:var(--text);
+    display:flex;
+    align-items:flex-start;
+    justify-content:center;
+  }
+  
+  .success-shell{
+    width:100%;
+    max-width:900px;
+    padding:24px 16px 40px;
+  }
+  
+  /* compact status bar */
+  .status-bar{
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:14px;
+    padding:12px 14px;
+    display:flex;
+    align-items:center;
+    gap:12px;
+  }
+  
+  .status-dot{
+    width:10px;height:10px;border-radius:50%;
+    background:var(--accent);
+    flex:0 0 auto;
+    box-shadow:0 0 0 3px rgba(0,230,118,.15);
+  }
+  
+  .status-text{ line-height:1.15; }
+  .status-strong{ font-weight:700; font-size:14px; }
+  .status-sub{ color:var(--muted); font-size:12px; margin-top:2px; }
+  .status-email{ color:#fff; }
+  
+  .status-actions{
+    margin-left:auto;
+    display:flex;
+    gap:8px;
+    flex-wrap:wrap;
+  }
+  
+  /* small buttons for header */
+  .btn{
+    height:34px;
+    padding:0 12px;
+    border-radius:10px;
+    border:1px solid var(--line);
+    background:rgba(255,255,255,.06);
+    color:var(--text);
+    font-weight:600;
+    font-size:13px;
+    cursor:pointer;
+    text-decoration:none;
+    display:inline-flex; align-items:center; justify-content:center;
+  }
+  .btn-xs{ height:30px; font-size:12px; padding:0 10px; }
+  .btn-accent{ background:var(--accent); border-color:transparent; color:#000; }
+  .btn-ghost:hover{ background:rgba(255,255,255,.1); }
+  .btn-accent:hover{ filter:brightness(.95); }
+  
+  /* tickets grid */
+  .tickets-grid{
+    display:grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap:14px;
+    margin-top:14px;
+  }
+  
+  .hint{ color:var(--muted); font-size:13px; }
+  .hint-error{ color:#ff8f8f; }
+  
+  /* ensure no rogue background images from old CSS */
+  .success-page, .success-shell{ background-image:none !important; }
+  
