@@ -1,40 +1,36 @@
-/* ===== Global document scrolling ===== */
+/* --- Page-level scroll settings --- */
 html, body, #root {
   height: auto;
   min-height: 100%;
-  overflow-y: auto;              /* let the document own vertical scroll */
-  overflow-x: hidden;
+  overflow-y: auto;            /* allow page to scroll */
+  overflow-x: hidden;          /* never side-scroll */
   -webkit-overflow-scrolling: touch;
 }
 
 html {
   scroll-behavior: smooth;
-  height: 100%;
-  overflow-x: hidden;
   scrollbar-color: #ffffff #0A0A23;
 }
 
 body {
-  min-height: 100dvh;            /* dynamic viewport fixes iOS address bar jump */
   margin: 0;
   padding: 0;
   background: #0A0A23;
   font-family: 'Inter', sans-serif;
-  color: white;
-  overflow-x: hidden;
+  color: #fff;
 }
 
-/* ===== Page wrapper (does NOT trap scroll) ===== */
+/* --- Main container --- */
 .event-fullscreen {
-  min-height: 100dvh;
+  min-height: 100dvh;          /* grow with content */
   width: 100%;
-  background: linear-gradient(to bottom, #0A0A23 0%, #000000 100%);
-  overflow: visible;             /* allow page to scroll naturally */
+  background: linear-gradient(to bottom, #0A0A23 0%, #000 100%);
+  overflow: visible;           /* let the document handle scroll */
   position: relative;
   padding-top: 24px;
 }
 
-/* ===== Leaflet map: allow normal touch panning without killing page scroll ===== */
+/* Map needs explicit touch action on iOS */
 .leaflet-container {
   touch-action: pan-x pan-y;
   width: 100%;
@@ -44,7 +40,7 @@ body {
   margin-top: 10px;
 }
 
-/* ===== App Store icon ===== */
+/* --- App store button --- */
 .event-app-download {
   position: fixed;
   top: 20px;
@@ -57,7 +53,7 @@ body {
   cursor: pointer;
 }
 
-/* ===== Top hero ===== */
+/* --- Hero image --- */
 .event-top-section {
   display: flex;
   justify-content: center;
@@ -73,7 +69,7 @@ body {
   display: block;
 }
 
-/* ===== Centered status messages ===== */
+/* --- Loading/Error --- */
 .event-error,
 .event-loading {
   position: absolute;
@@ -83,7 +79,7 @@ body {
   font-size: 40px;
 }
 
-/* ===== Main content ===== */
+/* --- Content --- */
 .event-content {
   width: 100%;
   max-width: 700px;
@@ -94,7 +90,6 @@ body {
   align-items: center;
   text-align: center;
 }
-
 .event-title {
   font-size: 32px;
   font-weight: 800;
@@ -103,7 +98,6 @@ body {
   -webkit-text-fill-color: transparent;
   margin: 20px 0 8px;
 }
-
 .event-date,
 .event-location {
   font-size: 14px;
@@ -120,6 +114,7 @@ body {
   flex-wrap: wrap;
 }
 
+/* --- Buttons --- */
 .btn-primary,
 .btn-secondary {
   padding: 12px 20px;
@@ -133,12 +128,12 @@ body {
 }
 .btn-primary {
   background: #00E676;
-  color: black;
+  color: #000;
   box-shadow: 0 0 10px #00E676aa;
 }
 .btn-secondary {
   background: #14142B;
-  color: white;
+  color: #fff;
   border: 1px solid #333;
 }
 .btn-primary:hover,
@@ -146,7 +141,7 @@ body {
   transform: scale(1.03);
 }
 
-/* ===== Cards ===== */
+/* --- Cards --- */
 .event-about,
 .event-map {
   width: 100%;
@@ -184,7 +179,7 @@ body {
   font-size: 15px;
 }
 
-/* ===== Email input (if used) ===== */
+/* --- Email input (if used) --- */
 .event-email-input input {
   width: 100%;
   margin-top: 20px;
@@ -192,30 +187,25 @@ body {
   border-radius: 12px;
   background: #1b1b2c;
   border: 1px solid #444;
-  color: white;
+  color: #fff;
   font-size: 15px;
 }
 
-/* ===== Modal (Stripe/Register/Auth) ===== */
+/* --- Modal (Register/Stripe) --- */
 .popup-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0,0,0,.55);
-  overflow: auto;               /* modal itself can scroll */
+  background: rgba(0, 0, 0, .55);
+  overflow: auto;                 /* modal itself can scroll */
   -webkit-overflow-scrolling: touch;
   z-index: 9999;
 }
 .popup-modal {
   max-height: 90dvh;
   overflow: auto;
-  margin: 40px auto;
-  background: #111827;
-  border-radius: 16px;
-  padding: 20px;
-  width: min(640px, 92vw);
 }
 
-/* ===== Mobile tweaks ===== */
+/* --- Mobile tweaks --- */
 @media (max-width: 768px) {
   .event-title { font-size: 26px; }
   .event-about,
