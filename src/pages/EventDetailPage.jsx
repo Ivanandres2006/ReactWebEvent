@@ -97,57 +97,68 @@ export default function EventDetailPage() {
   }, [id])
 
   // Load tiers when popup opens
-  useEffect(() => {
-    if (!showPopup || !id) return
-    const lsKey = `lastTier:${id}`
+useEffect(() => {
+  if (!showPopup || !id) return
+  const lsKey = `lastTier:${id}`
 
-    const loadTiers = async () => {
-      setTiersLoading(true)
-      setTiersErr(null)
-      try {
-        const res = await fetch(`${API}/events/${id}/tiers`, {
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
-        })
+  const loadTiers = async () => {
+    setTiersLoading(true)
+    setTiersErr(null)
 
-        if (res.status === 401) {
-          setShowAuth(true)
-          return
-        }
+    // helpers that mirror the iOS logic
+    const isSoldOut = (t) => Number(t?.availableQuantity ?? 0) <= 0
+    const hasNotStarted = (t, now) => t?.startTime ? now < new Date(t.startTime) : false
+    const hasEnded = (t, now) => t?.endTime ? now > new Date(t.endTime) : false
+    const isLockedByTime = (t, now) => (!t?.forceOpen && hasNotStarted(t, now)) || hasEnded(t, now)
 
-        if (res.status === 404) {
-          const fallback = event?.ticketTiers || []
-          setTiers(fallback)
-          const saved = parseInt(localStorage.getItem(lsKey) || 'NaN', 10)
-          const exists = fallback.some(t => t?.id === saved)
-          setSelectedTierId(exists ? saved : (fallback[0]?.id ?? null))
-          return
-        }
+    const pickDefault = (list) => {
+      const finalList = Array.isArray(list) ? list : []
+      setTiers(finalList)
 
-        if (!res.ok) throw new Error(`Tiers fetch failed: ${res.status}`)
-        const data = await res.json()
-        const list = Array.isArray(data) ? data : []
-        const finalList = list.length ? list : (event?.ticketTiers || [])
-        setTiers(finalList)
+      const now = Date.now()
+      const saved = parseInt(localStorage.getItem(lsKey) || 'NaN', 10)
+      const savedObj = finalList.find(t => t?.id === saved)
+      const savedOk = savedObj && !isSoldOut(savedObj) && !isLockedByTime(savedObj, now)
 
-        const saved = parseInt(localStorage.getItem(lsKey) || 'NaN', 10)
-        const exists = finalList.some(t => t?.id === saved)
-        setSelectedTierId(exists ? saved : (finalList[0]?.id ?? null))
-      } catch (e) {
-        console.warn('⚠️ tiers error, using fallback:', e.message)
-        const fallback = event?.ticketTiers || []
-        setTiers(fallback)
-        const saved = parseInt(localStorage.getItem(lsKey) || 'NaN', 10)
-        const exists = fallback.some(t => t?.id === saved)
-        setSelectedTierId(exists ? saved : (fallback[0]?.id ?? null))
-        setTiersErr(e.message)
-      } finally {
-        setTiersLoading(false)
-      }
+      if (savedOk) return setSelectedTierId(saved)
+
+      // next available by tierOrder
+      const sorted = finalList.slice().sort((a,b) => (a.tierOrder ?? 0) - (b.tierOrder ?? 0))
+      const next = sorted.find(t => !isSoldOut(t) && !isLockedByTime(t, now))
+      setSelectedTierId(next?.id ?? (finalList[0]?.id ?? null))
     }
 
-    loadTiers()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showPopup, id, token])
+    try {
+      const res = await fetch(`${API}/events/${id}/tiers`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      })
+
+      if (res.status === 401) { setShowAuth(true); return }
+
+      if (res.status === 404) {
+        // fallback to embedded tiers
+        pickDefault(event?.ticketTiers || [])
+        return
+      }
+
+      if (!res.ok) throw new Error(`Tiers fetch failed: ${res.status}`)
+
+      const data = await res.json()
+      const list = Array.isArray(data) ? data : []
+      pickDefault(list.length ? list : (event?.ticketTiers || []))
+    } catch (e) {
+      console.warn('⚠️ tiers error, using fallback:', e.message)
+      setTiersErr(e.message)
+      pickDefault(event?.ticketTiers || [])
+    } finally {
+      setTiersLoading(false)
+    }
+  }
+
+  loadTiers()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [showPopup, id, token])
+
 
   // Build dynamic payment options for the popup
   const payments = event ? {
