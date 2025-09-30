@@ -25,7 +25,36 @@ export default function RegisterPopup({
   const [feeAuthNeeded, setFeeAuthNeeded] = useState(false) // 👈 soft hint instead of red error
   const [feeHadError, setFeeHadError] = useState(false)
 
-  const token = typeof window !== 'undefined' ? (localStorage.getItem('token') || '') : ''
+  function getValidTokenFromLS() {
+    const t = localStorage.getItem('token') || '';
+    if (!t || t === 'undefined') return null;
+    try {
+      const [_, b] = t.split('.');
+      const payload = JSON.parse(atob(b.replace(/-/g,'+').replace(/_/g,'/')));
+      if (payload?.exp && Date.now() >= payload.exp * 1000) return null;
+    } catch {}
+    return t;
+  }
+  
+  function useAuthToken() {
+    const [tok, setTok] = useState(getValidTokenFromLS());
+  
+    useEffect(() => {
+      const onFocus = () => setTok(getValidTokenFromLS());
+      const onAuth = () => setTok(getValidTokenFromLS()); // custom event after login
+      window.addEventListener('focus', onFocus);
+      window.addEventListener('auth:login', onAuth);
+      return () => {
+        window.removeEventListener('focus', onFocus);
+        window.removeEventListener('auth:login', onAuth);
+      };
+    }, []);
+  
+    return tok;
+  }
+  
+
+  const token = useAuthToken();
 
   const fmtPrice = (n) => `$${Number(n || 0).toFixed(2)}`
   const centsToUSD = (c) => `$${((Number(c || 0)) / 100).toFixed(2)}`

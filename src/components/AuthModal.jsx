@@ -53,9 +53,14 @@ export default function AuthModal({ onClose }) {
       }
 
       if (isLogin) {
-        // ✅ store tokens from JwtResponse
-        localStorage.setItem('token', data.token)
-        if (data.refreshToken) localStorage.setItem('refreshToken', data.refreshToken)
+        const access = data.accessToken || data.token || data.jwt || ''
+                if (!access) {
+                   alert('Login succeeded but no access token was returned.');
+                   setLoading(false);
+                   return;
+                  }
+                  localStorage.setItem('token', access)
+  if (data.refreshToken) localStorage.setItem('refreshToken', data.refreshToken)
         setLoading(false)
         onClose()
       } else {
@@ -68,6 +73,8 @@ export default function AuthModal({ onClose }) {
       alert('Network error. Try again.')
     }
   }
+
+  
 
   async function handleVerifySubmit(e) {
     e.preventDefault()
