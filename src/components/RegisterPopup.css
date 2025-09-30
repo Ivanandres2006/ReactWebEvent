@@ -45,11 +45,35 @@
 }
 .ticket-quantity label{ font-weight:600 }
 .ticket-quantity input{
-  width:70px; padding:9px 10px; text-align:center;
+  width:80px; padding:9px 10px; text-align:center;
   border-radius:10px; background:#1b1b2c; border:1px solid #3b415a; color:#fff;
 }
 
-/* === Method tabs (Card / Pago Móvil / Zelle / Cash) === */
+/* === Fee box === */
+.fee-box{
+  margin-top:14px;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 14px;
+  padding: 12px;
+}
+.fee-row{
+  display:flex; align-items:center; justify-content:space-between;
+  gap:10px; padding: 4px 2px; font-size:14px;
+}
+.fee-row.total{
+  font-weight:800; font-size:15px;
+}
+.fee-row.muted{ color: rgba(255,255,255,0.7); }
+.fee-row.error{ color: #ff6b6b; }
+.fee-label{ opacity: .9 }
+.fee-value{ font-variant-numeric: tabular-nums }
+.fee-divider{
+  height:1px; background: rgba(255,255,255,.12);
+  margin: 6px 0 2px;
+}
+
+/* === Method tabs === */
 .method-tabs{
   display:flex; flex-wrap:wrap; gap:10px; margin-top:16px;
 }
@@ -99,5 +123,5 @@
   .tier-price{ font-size:15px }
 }
 @media (max-width:360px){
-  .tab{ flex:1 0 calc(50% - 6px) }           /* wrap into 2 columns on very small screens */
+  .tab{ flex:1 0 calc(50% - 6px) }
 }

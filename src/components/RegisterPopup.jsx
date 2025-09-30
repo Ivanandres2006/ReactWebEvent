@@ -1,7 +1,10 @@
 import React, { useMemo, useState, useEffect } from 'react'
 import './RegisterPopup.css'
 
+const API = 'https://backendevent-etce.onrender.com'
+
 export default function RegisterPopup({
+  eventId,              // 👈 NEW: required for fee quote
   tiers,
   loading = false,
   error = null,
@@ -16,7 +19,14 @@ export default function RegisterPopup({
 }) {
   const [method, setMethod] = useState('card')
 
+  // --- Fee state ---
+  const [fee, setFee] = useState(null)
+  const [feeLoading, setFeeLoading] = useState(false)
+  const [feeErr, setFeeErr] = useState(null)
+
   const fmtPrice = (n) => `$${Number(n || 0).toFixed(2)}`
+  const centsToUSD = (c) => `$${((Number(c || 0)) / 100).toFixed(2)}`
+
   const splitDescription = (txt) =>
     !txt
       ? []
@@ -117,6 +127,78 @@ export default function RegisterPopup({
     onPay?.(method)
   }
 
+  // === Fee quote fetch (mirrors iOS /quote) ===
+  useEffect(() => {
+    // Only fetch when we have everything necessary
+    if (!eventId || !selectedTierId || quantity < 1) {
+      setFee(null); setFeeErr(null); setFeeLoading(false)
+      return
+    }
+
+    let cancelled = false
+    const controller = new AbortController()
+
+    const fetchFee = async () => {
+      try {
+        setFeeLoading(true)
+        setFeeErr(null)
+        const token = localStorage.getItem('token') || ''
+
+        const params = new URLSearchParams({
+          eventId: String(eventId),
+          ticketTierId: String(selectedTierId),
+          quantity: String(quantity),
+          paymentMethod: method,
+        })
+        const url = `${API}/api/tickets/quote?${params.toString()}`
+        const res = await fetch(url, {
+          method: 'GET',
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+          signal: controller.signal,
+        })
+        if (!res.ok) throw new Error(`fee ${res.status}`)
+        const data = await res.json()
+        if (!cancelled) setFee(data || null)
+      } catch (e) {
+        if (!cancelled) { setFee(null); setFeeErr(e.message || 'fee error') }
+      } finally {
+        if (!cancelled) setFeeLoading(false)
+      }
+    }
+
+    fetchFee()
+    return () => { cancelled = true; controller.abort() }
+  }, [eventId, selectedTierId, quantity, method])
+
+  // Derived fee rows
+  const feeRows = useMemo(() => {
+    if (!fee) return null
+    // Expected DTO from backend (like iOS):
+    // currency, subtotalCents, platformFeeCents, stripeFeeCents, serviceFeeCents, totalCents...
+    const rows = []
+
+    if (typeof fee.subtotalCents === 'number') {
+      const qtyText = selectedTier ? `${selectedTier.name} ×${quantity}` : 'Subtotal'
+      rows.push({ label: qtyText, value: centsToUSD(fee.subtotalCents), strong: false })
+    }
+    if (typeof fee.serviceFeeCents === 'number') {
+      rows.push({ label: 'Service fee', value: centsToUSD(fee.serviceFeeCents), strong: false })
+    }
+    // Optionally show Stripe fee line if backend returns it
+    if (typeof fee.stripeFeeCents === 'number' && fee.stripeFeeCents > 0 && method === 'card') {
+      rows.push({ label: 'Stripe fee', value: centsToUSD(fee.stripeFeeCents), strong: false })
+    }
+    // Platform fee if returned and not 0
+    if (typeof fee.platformFeeCents === 'number' && fee.platformFeeCents > 0) {
+      rows.push({ label: 'Platform fee', value: centsToUSD(fee.platformFeeCents), strong: false })
+    }
+
+    if (typeof fee.totalCents === 'number') {
+      rows.push({ label: 'Total', value: centsToUSD(fee.totalCents), strong: true })
+    }
+    return rows
+  }, [fee, selectedTier, quantity, method])
+
   return (
     <div className="popup-overlay" onClick={onClose}>
       <div className="popup-modal" onClick={(e) => e.stopPropagation()}>
@@ -176,7 +258,10 @@ export default function RegisterPopup({
 
         <div className="ticket-quantity">
           <label>
-            Quantity <span style={{ opacity: 0.6, marginLeft: 6 }}></span>
+            Quantity{' '}
+            <span style={{ opacity: 0.6, marginLeft: 6 }}>
+              (max {maxQty})
+            </span>
           </label>
           <input
             type="number"
@@ -196,6 +281,35 @@ export default function RegisterPopup({
             }}
           />
         </div>
+
+        {/* Fee box */}
+        {selectedTierId && quantity >= 1 && (
+          <div className="fee-box" aria-live="polite">
+            {feeLoading ? (
+              <div className="fee-row muted">Calculating fees…</div>
+            ) : feeErr ? (
+              <div className="fee-row error">Couldn’t load fees.</div>
+            ) : feeRows && feeRows.length ? (
+              <>
+                {feeRows.slice(0, -1).map((r, idx) => (
+                  <div className="fee-row" key={idx}>
+                    <span className="fee-label">{r.label}</span>
+                    <span className="fee-value">{r.value}</span>
+                  </div>
+                ))}
+                <div className="fee-divider" />
+                {feeRows.slice(-1).map((r, idx) => (
+                  <div className="fee-row total" key={`t-${idx}`}>
+                    <span className="fee-label">{r.label}</span>
+                    <span className="fee-value">{r.value}</span>
+                  </div>
+                ))}
+              </>
+            ) : (
+              <div className="fee-row muted">No fee info.</div>
+            )}
+          </div>
+        )}
 
         {/* Method tabs */}
         <div className="method-tabs">

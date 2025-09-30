@@ -97,68 +97,67 @@ export default function EventDetailPage() {
   }, [id])
 
   // Load tiers when popup opens
-useEffect(() => {
-  if (!showPopup || !id) return
-  const lsKey = `lastTier:${id}`
+  useEffect(() => {
+    if (!showPopup || !id) return
+    const lsKey = `lastTier:${id}`
 
-  const loadTiers = async () => {
-    setTiersLoading(true)
-    setTiersErr(null)
+    const loadTiers = async () => {
+      setTiersLoading(true)
+      setTiersErr(null)
 
-    // helpers that mirror the iOS logic
-    const isSoldOut = (t) => Number(t?.availableQuantity ?? 0) <= 0
-    const hasNotStarted = (t, now) => t?.startTime ? now < new Date(t.startTime) : false
-    const hasEnded = (t, now) => t?.endTime ? now > new Date(t.endTime) : false
-    const isLockedByTime = (t, now) => (!t?.forceOpen && hasNotStarted(t, now)) || hasEnded(t, now)
+      // helpers that mirror the iOS logic
+      const isSoldOut = (t) => Number(t?.availableQuantity ?? 0) <= 0
+      const hasNotStarted = (t, now) => t?.startTime ? now < new Date(t.startTime) : false
+      const hasEnded = (t, now) => t?.endTime ? now > new Date(t.endTime) : false
+      const isLockedByTime = (t, now) => (!t?.forceOpen && hasNotStarted(t, now)) || hasEnded(t, now)
 
-    const pickDefault = (list) => {
-      const finalList = Array.isArray(list) ? list : []
-      setTiers(finalList)
+      const pickDefault = (list) => {
+        const finalList = Array.isArray(list) ? list : []
+        setTiers(finalList)
 
-      const now = Date.now()
-      const saved = parseInt(localStorage.getItem(lsKey) || 'NaN', 10)
-      const savedObj = finalList.find(t => t?.id === saved)
-      const savedOk = savedObj && !isSoldOut(savedObj) && !isLockedByTime(savedObj, now)
+        const now = Date.now()
+        const saved = parseInt(localStorage.getItem(lsKey) || 'NaN', 10)
+        const savedObj = finalList.find(t => t?.id === saved)
+        const savedOk = savedObj && !isSoldOut(savedObj) && !isLockedByTime(savedObj, now)
 
-      if (savedOk) return setSelectedTierId(saved)
+        if (savedOk) return setSelectedTierId(saved)
 
-      // next available by tierOrder
-      const sorted = finalList.slice().sort((a,b) => (a.tierOrder ?? 0) - (b.tierOrder ?? 0))
-      const next = sorted.find(t => !isSoldOut(t) && !isLockedByTime(t, now))
-      setSelectedTierId(next?.id ?? (finalList[0]?.id ?? null))
-    }
-
-    try {
-      const res = await fetch(`${API}/events/${id}/tiers`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      })
-
-      if (res.status === 401) { setShowAuth(true); return }
-
-      if (res.status === 404) {
-        // fallback to embedded tiers
-        pickDefault(event?.ticketTiers || [])
-        return
+        // next available by tierOrder
+        const sorted = finalList.slice().sort((a,b) => (a.tierOrder ?? 0) - (b.tierOrder ?? 0))
+        const next = sorted.find(t => !isSoldOut(t) && !isLockedByTime(t, now))
+        setSelectedTierId(next?.id ?? (finalList[0]?.id ?? null))
       }
 
-      if (!res.ok) throw new Error(`Tiers fetch failed: ${res.status}`)
+      try {
+        const res = await fetch(`${API}/events/${id}/tiers`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        })
 
-      const data = await res.json()
-      const list = Array.isArray(data) ? data : []
-      pickDefault(list.length ? list : (event?.ticketTiers || []))
-    } catch (e) {
-      console.warn('⚠️ tiers error, using fallback:', e.message)
-      setTiersErr(e.message)
-      pickDefault(event?.ticketTiers || [])
-    } finally {
-      setTiersLoading(false)
+        if (res.status === 401) { setShowAuth(true); return }
+
+        if (res.status === 404) {
+          // fallback to embedded tiers
+          pickDefault(event?.ticketTiers || [])
+          return
+        }
+
+        if (!res.ok) throw new Error(`Tiers fetch failed: ${res.status}`)
+
+        const data = await res.json()
+        const list = Array.isArray(data) ? data : []
+        pickDefault(list.length ? list : (event?.ticketTiers || []))
+      } catch (e) {
+        console.warn('⚠️ tiers error, using fallback:', e.message)
+        setTiersErr(e.message)
+        pickDefault(event?.ticketTiers || [])
+      } finally {
+        setTiersLoading(false)
+      }
     }
-  }
 
-  loadTiers()
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-}, [showPopup, id, token])
-
+    loadTiers()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showPopup, id, token])
 
   // Build dynamic payment options for the popup
   const payments = event ? {
@@ -295,7 +294,6 @@ useEffect(() => {
           <button className="btn-primary" onClick={() => setShowPopup(true)}>
             Register
           </button>
-          <button className="btn-secondary">Contact</button>
           <button className="btn-secondary">Share</button>
         </div>
 
@@ -331,29 +329,69 @@ useEffect(() => {
         </div>
       </div>
 
+      {/* Footer */}
+      <footer className="site-footer">
+        <div className="footer-inner">
+          <div className="brand">
+            <span className="logo-dot" />
+            <span>WKND</span>
+          </div>
+
+          <div className="links">
+            <a
+              className="footer-link"
+              href="https://instagram.com/wkndevent"
+              target="_blank"
+              rel="noreferrer"
+              aria-label="Instagram"
+              title="Instagram"
+            >
+              <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+                <path fill="currentColor" d="M7 2h10a5 5 0 0 1 5 5v10a5 5 0 0 1-5 5H7a5 5 0 0 1-5-5V7a5 5 0 0 1 5-5m0 2a3 3 0 0 0-3 3v10a3 3 0 0 0 3 3h10a3 3 0 0 0 3-3V7a3 3 0 0 0-3-3H7m5 3a5 5 0 1 1 0 10a5 5 0 0 1 0-10m0 2a3 3 0 1 0 0 6a3 3 0 0 0 0-6m5.5-.75a1.25 1.25 0 1 1 0 2.5a1.25 1.25 0 0 1 0-2.5Z"/>
+              </svg>
+              <span>@wknd</span>
+            </a>
+
+            <a
+              className="footer-link"
+              href="mailto:support@wknd.events?subject=WKND%20Support"
+              title="Contact support"
+            >
+              <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+                <path fill="currentColor" d="M20 4H4a2 2 0 0 0-2 2v.4l10 6.25L22 6.4V6a2 2 0 0 0-2-2Zm2 5.25L12.52 15a1 1 0 0 1-1 0L2 9.25V18a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9.25Z"/>
+              </svg>
+              <span>support@wkndevent.com</span>
+            </a>
+          </div>
+
+          <div className="copy">© {new Date().getFullYear()} WKND — All rights reserved</div>
+        </div>
+      </footer>
+
       {showPopup && (
-        <RegisterPopup
-          tiers={tiers.length ? tiers : (event.ticketTiers || [])}
-          loading={tiersLoading}
-          error={tiersErr}
-          selectedTierId={selectedTierId}
-          quantity={quantity}
-          submitting={checkingOut}
-          payments={payments}               
-          onClose={() => {
-            setShowPopup(false)
-            setSelectedTierId(null)
-            setCheckingOut(false)
-            clickedOnceRef.current = false
-          }}
-          onSelectTier={(tierId) => {
-            setSelectedTierId(tierId)
-            try { localStorage.setItem(`lastTier:${id}`, String(tierId)) } catch {}
-          }}
-          onQuantityChange={setQuantity}
-          onPay={(method) => handleBuy(method ?? 'card')}
-        />
-      )}
+  <RegisterPopup
+    eventId={id}                     // 👈 NEW
+    tiers={tiers.length ? tiers : (event.ticketTiers || [])}
+    loading={tiersLoading}
+    error={tiersErr}
+    selectedTierId={selectedTierId}
+    quantity={quantity}
+    submitting={checkingOut}
+    payments={payments}
+    onClose={() => {
+      setShowPopup(false)
+      setSelectedTierId(null)
+      setCheckingOut(false)
+      clickedOnceRef.current = false
+    }}
+    onSelectTier={(tierId) => {
+      setSelectedTierId(tierId)
+      try { localStorage.setItem(`lastTier:${id}`, String(tierId)) } catch {}
+    }}
+    onQuantityChange={setQuantity}
+    onPay={(method) => handleBuy(method ?? 'card')}
+  />
+)}
 
       {clientSecret && (
         <div className="popup-overlay" onClick={() => setClientSecret(null)}>
@@ -368,7 +406,6 @@ useEffect(() => {
                     method: 'POST',
                     headers: token ? { Authorization: `Bearer ${token}` } : {},
                   })
-                  // 👉 include the PI in the redirect so SuccessPage shows only this checkout
                   window.location.href = `/#/success?eventId=${id}&pi=${encodeURIComponent(paymentIntentId)}`
                 }}
               />

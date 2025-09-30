@@ -1,31 +1,39 @@
-/* --- Page-level scroll settings --- */
+/* --- Global/scroll: keep everything dark, no white flashes --- */
 html, body, #root {
+  background: #0A0A23;             /* solid base color */
   height: auto;
   min-height: 100%;
-  overflow-y: auto;            /* allow page to scroll */
-  overflow-x: hidden;          /* never side-scroll */
+  overflow-y: auto;
+  overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;   /* avoid rubber-band showing white bg */
 }
 
-html {
-  scroll-behavior: smooth;
-  scrollbar-color: #ffffff #0A0A23;
-}
-
+html { scroll-behavior: smooth; }
 body {
   margin: 0;
   padding: 0;
-  background: #0A0A23;
-  font-family: 'Inter', sans-serif;
+  font-family: 'Inter', system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
   color: #fff;
 }
 
+/* Optional: tint scrollbars (desktop) */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #3ee68f #0A0A23;
+}
+*::-webkit-scrollbar { width: 10px; }
+*::-webkit-scrollbar-thumb { background: #2b9e66; border-radius: 10px; }
+*::-webkit-scrollbar-track { background: #0A0A23; }
+
 /* --- Main container --- */
 .event-fullscreen {
-  min-height: 100dvh;          /* grow with content */
+  min-height: 100dvh;
   width: 100%;
-  background: linear-gradient(to bottom, #0A0A23 0%, #000 100%);
-  overflow: visible;           /* let the document handle scroll */
+  background:
+    radial-gradient(1200px 600px at 20% -10%, rgba(0, 230, 118, 0.05), transparent 60%),
+    linear-gradient(to bottom, #0A0A23 0%, #000 100%);
+  overflow: visible;
   position: relative;
   padding-top: 24px;
 }
@@ -179,30 +187,80 @@ body {
   font-size: 15px;
 }
 
-/* --- Email input (if used) --- */
-.event-email-input input {
-  width: 100%;
-  margin-top: 20px;
-  padding: 14px;
-  border-radius: 12px;
-  background: #1b1b2c;
-  border: 1px solid #444;
-  color: #fff;
-  font-size: 15px;
-}
-
 /* --- Modal (Register/Stripe) --- */
 .popup-overlay {
   position: fixed;
   inset: 0;
   background: rgba(0, 0, 0, .55);
-  overflow: auto;                 /* modal itself can scroll */
+  overflow: auto;                   /* modal itself can scroll */
   -webkit-overflow-scrolling: touch;
   z-index: 9999;
 }
 .popup-modal {
   max-height: 90dvh;
   overflow: auto;
+}
+
+/* --- Footer --- */
+.site-footer {
+  margin-top: 40px;
+  padding: 26px 16px 40px;
+  border-top: 1px solid rgba(255,255,255,0.08);
+  background:
+    linear-gradient(to bottom, rgba(255,255,255,0.02), rgba(0,0,0,0.08));
+}
+.footer-inner {
+  max-width: 900px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 16px 24px;
+  align-items: center;
+}
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  color: #fff;
+}
+.logo-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #00E676;
+  box-shadow: 0 0 12px #00E676;
+  display: inline-block;
+}
+.links {
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+}
+.footer-link {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  color: #cfeede;
+  text-decoration: none;
+  font-weight: 600;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: rgba(255,255,255,0.04);
+  transition: transform .1s ease, background .2s ease, border-color .2s ease;
+}
+.footer-link:hover {
+  transform: translateY(-1px);
+  background: rgba(255,255,255,0.08);
+  border-color: rgba(255,255,255,0.12);
+}
+.copy {
+  grid-column: 1 / -1;
+  color: rgba(255,255,255,0.55);
+  font-size: 13px;
+  margin-top: 2px;
 }
 
 /* --- Mobile tweaks --- */
@@ -216,5 +274,14 @@ body {
     aspect-ratio: 16 / 9;
     object-fit: cover;
     border-radius: 20px;
+  }
+
+  .footer-inner {
+    grid-template-columns: 1fr;
+    text-align: center;
+  }
+  .links {
+    justify-content: center;
+    flex-wrap: wrap;
   }
 }
