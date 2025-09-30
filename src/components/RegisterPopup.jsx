@@ -176,7 +176,7 @@ export default function RegisterPopup({
 
         <div className="ticket-quantity">
           <label>
-            Quantity <span style={{ opacity: 0.6, marginLeft: 6 }}>(Max {maxQty})</span>
+            Quantity <span style={{ opacity: 0.6, marginLeft: 6 }}></span>
           </label>
           <input
             type="number"
