@@ -35,12 +35,12 @@ export default function WebTicketCard({ ticket, apiBase, token }) {
       })
       if (!res.ok) throw new Error('pkpass error')
       let buf = await res.arrayBuffer()
-      // handle optional { pkpass: base64 } wrapper
+      // optional { pkpass: base64 }
       try {
         const text = new TextDecoder().decode(buf)
         const j = JSON.parse(text)
         if (j?.pkpass) buf = Uint8Array.from(atob(j.pkpass), c => c.charCodeAt(0)).buffer
-      } catch {/* bytes already */}
+      } catch { /* already bytes */ }
       const blob = new Blob([buf], { type: 'application/vnd.apple.pkpass' })
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')

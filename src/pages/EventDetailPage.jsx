@@ -149,6 +149,25 @@ export default function EventDetailPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showPopup, id, token])
 
+  // Build dynamic payment options for the popup
+  const payments = event ? {
+    zelle: {
+      enabled: !!(event.zelleEmail || event.zellePhone),
+      email: event.zelleEmail || '',
+      phone: event.zellePhone || '',
+    },
+    pagoMovil: {
+      enabled: (String(event.country || '').toLowerCase() === 'venezuela') && !!event.allowPagoMovil,
+      phone: event.pagoMovilPhone || '',
+      ci: event.pagoMovilCi || '',
+      bank: event.pagoMovilBank || '',
+    },
+    cash: {
+      enabled: !!event.allowCash,
+      note: event.cashNote || '',
+    },
+  } : null
+
   /**
    * Handle checkout; method: 'card' | 'zelle' | 'pagoMovil' | 'cash'
    * Locked so it can’t fire twice.
@@ -190,10 +209,10 @@ export default function EventDetailPage() {
         return
       }
 
-      // manual methods -> go to success with pending banner
+      // manual methods
       if (data.manual === true) {
-        const m = encodeURIComponent(body.paymentMethod)
-        window.location.href = `/#/success?eventId=${id}&pending=${m}`
+        setShowPopup(false)
+        window.location.href = `/#/success?eventId=${id}&pending=${encodeURIComponent(method)}`
         return
       }
 
@@ -201,6 +220,7 @@ export default function EventDetailPage() {
       if (data.clientSecret) {
         setClientSecret(data.clientSecret)
         setShowPopup(false)
+        // keep checkingOut locked until Stripe modal flow finishes
         return
       }
 
@@ -209,6 +229,7 @@ export default function EventDetailPage() {
       console.error('❌ Checkout failed:', err)
       alert('Checkout error. Try again.')
     } finally {
+      // Unlock only if we didn’t open Stripe
       setCheckingOut(false)
       clickedOnceRef.current = false
     }
@@ -304,6 +325,7 @@ export default function EventDetailPage() {
           selectedTierId={selectedTierId}
           quantity={quantity}
           submitting={checkingOut}
+          payments={payments}
           onClose={() => {
             setShowPopup(false)
             setSelectedTierId(null)
