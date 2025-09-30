@@ -41,9 +41,50 @@ export default function RegisterPopup({
 
   const token = useAuthToken()
 
-  const fmtPrice = n => `$${Number(n || 0).toFixed(2)}`
-  const centsToUSD = c => `$${((Number(c || 0)) / 100).toFixed(2)}`
-  const usdToCents = n => Math.round(Number(n || 0) * 100)
+  // ---- currency helpers
+  const vesRateFromPayments =
+    payments?.pagoMovil?.rate ??
+    payments?.pagoMovil?.vesRate ??
+    payments?.pagoMovil?.ves_per_usd ??
+    null // expected: number of VES per 1 USD
+
+  // when method is pagoMovil:
+  //  1) if backend says currency VES -> display VES
+  //  2) else if we have a VES rate -> convert USD->VES
+  const useVES = useMemo(() => {
+    if (method !== 'pagoMovil') return false
+    if (fee?.currency?.toUpperCase?.() === 'VES') return true
+    if (vesRateFromPayments && Number(vesRateFromPayments) > 0) return true
+    return false
+  }, [method, fee?.currency, vesRateFromPayments])
+
+  const vesRate = useMemo(() => {
+    if (fee?.currency?.toUpperCase?.() === 'VES') return 1 // already VES
+    const r = Number(vesRateFromPayments)
+    return useVES && r > 0 ? r : null
+  }, [fee?.currency, vesRateFromPayments, useVES])
+
+  const fmtUSD = (amount) =>
+    `$${Number(amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+
+  const fmtVES = (amount) =>
+    `Bs. ${Number(amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+
+  // amount in USD cents → formatted string (USD or VES)
+  const fmtCents = (cents) => {
+    const usd = (Number(cents || 0) / 100)
+    if (useVES && vesRate) return fmtVES(usd * vesRate)
+    if (fee?.currency?.toUpperCase?.() === 'VES') return fmtVES(usd) // server already gave VES "cents"
+    return fmtUSD(usd)
+  }
+
+  // unit price (tier.price is USD number), format in USD or VES depending on method/fee
+  const fmtUnitPrice = (usdNumber) => {
+    const usd = Number(usdNumber || 0)
+    if (useVES && vesRate) return fmtVES(usd * vesRate)
+    if (fee?.currency?.toUpperCase?.() === 'VES') return fmtVES(usd) // if server quoted in VES, mirror here too
+    return fmtUSD(usd)
+  }
 
   const splitDescription = (txt) =>
     !txt ? [] : [...new Set(txt.split(/[\n•;]| - |\u2022/g)
@@ -124,7 +165,7 @@ export default function RegisterPopup({
 
   const handleConfirm = () => { if (canPay) onPay?.(method) }
 
-  // === Fee quote fetch (now works WITHOUT login) ===
+  // === Fee quote fetch (works w/ or w/o login)
   useEffect(() => {
     setFeeHadError(false)
 
@@ -147,12 +188,8 @@ export default function RegisterPopup({
         })
         const url = `${API}/api/tickets/quote?${params.toString()}`
 
-        // include Authorization only if we actually have a token
         const headers = token ? { Authorization: `Bearer ${token}` } : undefined
-
         let res = await fetch(url, { method: 'GET', headers, signal: controller.signal })
-
-        // if we somehow get 401 with token, retry without it
         if (res.status === 401 && headers) {
           res = await fetch(url, { method: 'GET', signal: controller.signal })
         }
@@ -175,24 +212,24 @@ export default function RegisterPopup({
   const feeRows = useMemo(() => {
     const rows = []
     const hasLive = !!fee && typeof fee.totalCents === 'number'
-    const price = Number(selectedTier?.price ?? 0)
+    const priceUSD = Number(selectedTier?.price ?? 0)
 
     if (hasLive) {
       const qtyText = selectedTier ? `${selectedTier.name} ×${quantity}` : 'Subtotal'
-      if (typeof fee.subtotalCents === 'number') rows.push({ label: qtyText, value: centsToUSD(fee.subtotalCents), strong: false })
-      if (typeof fee.serviceFeeCents === 'number' && fee.serviceFeeCents > 0) rows.push({ label: 'Service fee', value: centsToUSD(fee.serviceFeeCents), strong: false })
-      if (method === 'card' && typeof fee.stripeFeeCents === 'number' && fee.stripeFeeCents > 0) rows.push({ label: 'Stripe fee', value: centsToUSD(fee.stripeFeeCents), strong: false })
-      if (typeof fee.platformFeeCents === 'number' && fee.platformFeeCents > 0) rows.push({ label: 'Platform fee', value: centsToUSD(fee.platformFeeCents), strong: false })
-      rows.push({ label: 'Total', value: centsToUSD(fee.totalCents), strong: true })
+      if (typeof fee.subtotalCents === 'number') rows.push({ label: qtyText, value: fmtCents(fee.subtotalCents), strong: false })
+      if (typeof fee.serviceFeeCents === 'number' && fee.serviceFeeCents > 0) rows.push({ label: 'Service fee', value: fmtCents(fee.serviceFeeCents), strong: false })
+      if (method === 'card' && typeof fee.stripeFeeCents === 'number' && fee.stripeFeeCents > 0) rows.push({ label: 'Stripe fee', value: fmtCents(fee.stripeFeeCents), strong: false })
+      if (typeof fee.platformFeeCents === 'number' && fee.platformFeeCents > 0) rows.push({ label: 'Platform fee', value: fmtCents(fee.platformFeeCents), strong: false })
+      rows.push({ label: 'Total', value: fmtCents(fee.totalCents), strong: true })
       return { rows, isEstimate: false }
     }
 
-    // Fallback: local estimate (no fees)
-    const subtotalCents = usdToCents(price * quantity)
-    rows.push({ label: selectedTier ? `${selectedTier.name} ×${quantity}` : 'Subtotal', value: centsToUSD(subtotalCents), strong: false })
-    rows.push({ label: 'Total (est.)', value: centsToUSD(subtotalCents), strong: true })
+    // Fallback: local estimate from tier price
+    const subtotalCents = Math.round(priceUSD * 100 * quantity)
+    rows.push({ label: selectedTier ? `${selectedTier.name} ×${quantity}` : 'Subtotal', value: fmtCents(subtotalCents), strong: false })
+    rows.push({ label: 'Total (est.)', value: fmtCents(subtotalCents), strong: true })
     return { rows, isEstimate: true }
-  }, [fee, selectedTier, quantity, method])
+  }, [fee, selectedTier, quantity, method, useVES, vesRate])
 
   return (
     <div className="popup-overlay" onClick={onClose}>
@@ -214,7 +251,9 @@ export default function RegisterPopup({
                    onClick={()=>{ if(!unavailable) onSelectTier(tier.id) }}>
                 <div className="tier-row">
                   <div className="tier-name">{tier.name}</div>
-                  <div className="tier-price">{fmtPrice(tier.price)}</div>
+                  <div className="tier-price">
+                    {fmtUnitPrice(tier.price)}
+                  </div>
                 </div>
                 {desc.length>0 && <ul className="tier-desc">{desc.map((li,i)=><li key={i}>{li}</li>)}</ul>}
                 <div className="tier-meta">
@@ -264,6 +303,11 @@ export default function RegisterPopup({
                     Showing estimate. Final fees will appear at checkout.
                   </div>
                 )}
+                {useVES && !vesRate && fee?.currency?.toUpperCase?.() !== 'VES' && (
+                  <div className="fee-hint">
+                    Showing USD because no VES rate was provided.
+                  </div>
+                )}
               </>
             )}
           </div>
@@ -306,7 +350,9 @@ export default function RegisterPopup({
         <div className="pay-buttons">
           <button className="buy-button" disabled={!canPay} onClick={handleConfirm}
                   style={submitting ? { pointerEvents: 'none', opacity: 0.6 } : {}}>
-            {submitting ? (method==='card' ? 'Processing…' : 'Sending…') : (method==='card' ? 'Pay with card' : `Pay (${methodPretty})`)}
+            {submitting
+              ? (method==='card' ? 'Processing…' : 'Sending…')
+              : (method==='card' ? 'Pay with card' : `Pay (${methodPretty})`)}
           </button>
 
           {method !== 'card' && (
