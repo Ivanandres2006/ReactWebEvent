@@ -4,7 +4,7 @@ import './RegisterPopup.css'
 
 const API = 'https://backendevent-etce.onrender.com'
 
-// Optional fallback sources for a VES rate
+// Optional: fallback sources so Pago Móvil can show Bs. even without backend
 const ENV_VES_RATE = Number(import.meta?.env?.VITE_VES_PER_USD || 0)
 const LS_VES_RATE  = Number(localStorage.getItem('ves_rate') || 0)
 
@@ -23,10 +23,13 @@ function useAuthToken() {
   const [tok, setTok] = useState(getValidTokenFromLS())
   useEffect(() => {
     const onFocus = () => setTok(getValidTokenFromLS())
-    const onAuth = () => setTok(getValidTokenFromLS())
+    const onAuth  = () => setTok(getValidTokenFromLS())
     window.addEventListener('focus', onFocus)
     window.addEventListener('auth:login', onAuth)
-    return () => { window.removeEventListener('focus', onFocus); window.removeEventListener('auth:login', onAuth) }
+    return () => {
+      window.removeEventListener('focus', onFocus)
+      window.removeEventListener('auth:login', onAuth)
+    }
   }, [])
   return tok
 }
@@ -38,65 +41,61 @@ export default function RegisterPopup({
 }) {
   const [method, setMethod] = useState('card')
 
-  // fee state
+  // --- Fee state
   const [fee, setFee] = useState(null)
   const [feeLoading, setFeeLoading] = useState(false)
   const [feeHadError, setFeeHadError] = useState(false)
 
   const token = useAuthToken()
 
-  // ====== currency / formatting ======
-  // Possible VES rate inputs
+  // ===== Currency / formatting =====
+  // If Pago Móvil is selected, we always display Bs (VES), regardless of having a rate.
+  const useVES = method === 'pagoMovil'
+
+  // Try to get a USD->VES rate from several sources (optional). 0 => “no rate, just label Bs.”
   const incomingRate =
     (fee && Number(fee.fxVesPerUsd)) ||
     (payments?.pagoMovil && Number(payments.pagoMovil.rate)) ||
     ENV_VES_RATE || LS_VES_RATE || 0
 
-  // ⬇️ Force VES display whenever Pago Móvil is selected
-  const useVES = method === 'pagoMovil'
-
-  // Effective rate (0 means "no conversion available")
+  // If server already quotes in VES, treat as “rate 1”; otherwise use incomingRate (may be 0)
   const vesRate = useMemo(() => {
     if (fee?.currency?.toUpperCase?.() === 'VES') return 1
-    return incomingRate > 0 ? incomingRate : 0
+    return Math.max(0, Number(incomingRate) || 0)
   }, [fee?.currency, incomingRate])
 
-  const fmtUSD = (amount) =>
-    `$${Number(amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+  const fmtUSD = (x) =>
+    `$${Number(x || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+  const fmtVES = (x) =>
+    `Bs. ${Number(x || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 
-  const fmtVES = (amount) =>
-    `Bs. ${Number(amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-
-  // Convert "USD cents" to display string (Bs for Pago Móvil)
+  // Convert “USD cents” to display string
   const fmtCents = (cents) => {
-    const base = Number(cents || 0) / 100 // USD amount
-    // If backend already says VES, treat numeric value as VES base units
-    if (fee?.currency?.toUpperCase?.() === 'VES') return fmtVES(base)
-    // Pago Móvil -> always show Bs.
-    if (useVES) {
-      if (vesRate > 0) return fmtVES(base * vesRate) // convert
-      return fmtVES(base) // fallback: show same numeric amount but in Bs.
-    }
+    const baseUSD = Number(cents || 0) / 100
+    // If backend says values are VES already
+    if (fee?.currency?.toUpperCase?.() === 'VES') return fmtVES(baseUSD)
+    // Pago Móvil -> always show Bs.; convert if we have a rate; otherwise same numeric labeled Bs.
+    if (useVES) return fmtVES(vesRate > 0 ? baseUSD * vesRate : baseUSD)
     // Other methods -> USD
-    return fmtUSD(base)
+    return fmtUSD(baseUSD)
   }
 
-  // Format a USD unit price according to active method (Pago Móvil -> Bs.)
+  // Format a USD unit price (tier.price) using the same rules
   const fmtUnitPrice = (usdNumber) => {
     const usd = Number(usdNumber || 0)
     if (fee?.currency?.toUpperCase?.() === 'VES') return fmtVES(usd)
-    if (useVES) {
-      if (vesRate > 0) return fmtVES(usd * vesRate)
-      return fmtVES(usd) // fallback when no rate available
-    }
+    if (useVES) return fmtVES(vesRate > 0 ? usd * vesRate : usd)
     return fmtUSD(usd)
   }
 
   const splitDescription = (txt) =>
-    !txt ? [] : [...new Set(txt.split(/[\n•;]| - |\u2022/g)
-      .map(s => s.replace(/^[-•\u2022]\s*/, '').trim()).filter(Boolean))]
+    !txt ? [] : [...new Set(
+      txt.split(/[\n•;]| - |\u2022/g)
+         .map(s => s.replace(/^[-•\u2022]\s*/, '').trim())
+         .filter(Boolean)
+    )]
 
-  // ====== availability / selection ======
+  // ===== Availability / selection
   const isSoldOut = t => Number(t?.availableQuantity ?? 0) <= 0
   const hasNotStarted = (t, now) => (t?.startTime ? now < new Date(t.startTime) : false)
   const hasEnded = (t, now) => (t?.endTime ? now > new Date(t.endTime) : false)
@@ -138,7 +137,7 @@ export default function RegisterPopup({
     [tiers, selectedTierId]
   )
 
-  // quantity clamp
+  // Quantity clamp
   const maxQty = useMemo(() => {
     const tierLeft = Number(selectedTier?.availableQuantity ?? 10)
     return Math.max(1, Math.min(10, tierLeft))
@@ -158,15 +157,18 @@ export default function RegisterPopup({
     !!selectedTierId && quantity >= 1 && quantity <= maxQty && !selectedDisabled && !submitting
 
   const showZelle = !!payments?.zelle?.enabled
-  const showPM = !!payments?.pagoMovil?.enabled
-  const showCash = !!payments?.cash?.enabled
+  const showPM    = !!payments?.pagoMovil?.enabled
+  const showCash  = !!payments?.cash?.enabled
 
   const methodPretty =
-    method === 'pagoMovil' ? 'Pago Móvil' : method === 'zelle' ? 'Zelle' : method === 'cash' ? 'Cash' : 'card'
+    method === 'pagoMovil' ? 'Pago Móvil'
+    : method === 'zelle'   ? 'Zelle'
+    : method === 'cash'    ? 'Cash'
+    : 'card'
 
   const handleConfirm = () => { if (canPay) onPay?.(method) }
 
-  // === Fee quote fetch (works with/without login)
+  // === Fee quote fetch (works with or without login)
   useEffect(() => {
     setFeeHadError(false)
 
@@ -209,7 +211,7 @@ export default function RegisterPopup({
     return () => { cancelled = true; controller.abort() }
   }, [eventId, selectedTierId, quantity, method, token])
 
-  // Build rows (now always Bs. for Pago Móvil)
+  // Build rows (always Bs for Pago Móvil)
   const feeRows = useMemo(() => {
     const rows = []
     const hasLive = !!fee && typeof fee.totalCents === 'number'
@@ -217,15 +219,17 @@ export default function RegisterPopup({
 
     if (hasLive) {
       const qtyText = selectedTier ? `${selectedTier.name} ×${quantity}` : 'Subtotal'
-      if (typeof fee.subtotalCents === 'number') rows.push({ label: qtyText, value: fmtCents(fee.subtotalCents), strong: false })
-      if (typeof fee.serviceFeeCents === 'number' && fee.serviceFeeCents > 0) rows.push({ label: 'Service fee', value: fmtCents(fee.serviceFeeCents), strong: false })
-      if (method === 'card' && typeof fee.stripeFeeCents === 'number' && fee.stripeFeeCents > 0) rows.push({ label: 'Stripe fee', value: fmtCents(fee.stripeFeeCents), strong: false })
-      if (typeof fee.platformFeeCents === 'number' && fee.platformFeeCents > 0) rows.push({ label: 'Platform fee', value: fmtCents(fee.platformFeeCents), strong: false })
+      if (typeof fee.subtotalCents     === 'number') rows.push({ label: qtyText,              value: fmtCents(fee.subtotalCents),     strong: false })
+      if (typeof fee.serviceFeeCents   === 'number' && fee.serviceFeeCents   > 0) rows.push({ label: 'Service fee', value: fmtCents(fee.serviceFeeCents),   strong: false })
+      if (typeof fee.platformFeeCents  === 'number' && fee.platformFeeCents  > 0) rows.push({ label: 'Platform fee', value: fmtCents(fee.platformFeeCents), strong: false })
+      if (method === 'card' && typeof fee.stripeFeeCents === 'number' && fee.stripeFeeCents > 0) {
+        rows.push({ label: 'Stripe fee', value: fmtCents(fee.stripeFeeCents), strong: false })
+      }
       rows.push({ label: 'Total', value: fmtCents(fee.totalCents), strong: true })
       return { rows, isEstimate: false }
     }
 
-    // Fallback: subtotal from tier price
+    // Fallback: subtotal from tier price (no fees)
     const subtotalCents = Math.round(priceUSD * 100 * quantity)
     rows.push({ label: selectedTier ? `${selectedTier.name} ×${quantity}` : 'Subtotal', value: fmtCents(subtotalCents), strong: false })
     rows.push({ label: 'Total (est.)', value: fmtCents(subtotalCents), strong: true })
@@ -247,9 +251,11 @@ export default function RegisterPopup({
             const unavailable = isUnavailable(tier)
             const desc = splitDescription(tier.description)
             return (
-              <div key={tier.id}
-                   className={['ticket-tier','rich',selected?'selected':'',unavailable?'disabled':''].join(' ').trim()}
-                   onClick={()=>{ if(!unavailable) onSelectTier(tier.id) }}>
+              <div
+                key={tier.id}
+                className={['ticket-tier','rich',selected?'selected':'',unavailable?'disabled':''].join(' ').trim()}
+                onClick={()=>{ if(!unavailable) onSelectTier(tier.id) }}
+              >
                 <div className="tier-row">
                   <div className="tier-name">{tier.name}</div>
                   <div className="tier-price">{fmtUnitPrice(tier.price)}</div>
@@ -257,8 +263,8 @@ export default function RegisterPopup({
                 {desc.length>0 && <ul className="tier-desc">{desc.map((li,i)=><li key={i}>{li}</li>)}</ul>}
                 <div className="tier-meta">
                   <span className="chip">{availabilityText(tier)}</span>
-                  {hasWindow(tier)&&<span className="chip light">🕒 {fmtWindow(tier)}</span>}
-                  {isLockedByOrder(tier)&&!tier.forceOpen&&!isSoldOut(tier)&&!hasNotStarted(tier,Date.now())&&!hasEnded(tier,Date.now())&&(
+                  {hasWindow(tier) && <span className="chip light">🕒 {fmtWindow(tier)}</span>}
+                  {isLockedByOrder(tier)&&!tier.forceOpen&&!isSoldOut(tier)&&!hasNotStarted(tier,Date.now())&&!hasEnded(tier,Date.now()) && (
                     <span className="chip warn">Next tier not open</span>
                   )}
                 </div>
@@ -270,10 +276,11 @@ export default function RegisterPopup({
         )}
 
         <div className="ticket-quantity">
-          <label>Quantity <span style={{opacity:0.6,marginLeft:6}}>(max {maxQty})</span></label>
-          <input type="number" min="1" max={maxQty} step="1" value={quantity}
-                 onChange={(e)=>{ const n=parseInt(e.target.value||'1',10); const clamped=isNaN(n)?1:Math.max(1,Math.min(maxQty,n)); onQuantityChange(clamped) }}
-                 onBlur={(e)=>{ const n=parseInt(e.target.value||'1',10); const clamped=isNaN(n)?1:Math.max(1,Math.min(maxQty,n)); if(clamped!==quantity) onQuantityChange(clamped) }}
+          <label>Quantity <span style={{opacity:0.6, marginLeft:6}}>(max {maxQty})</span></label>
+          <input
+            type="number" min="1" max={maxQty} step="1" value={quantity}
+            onChange={(e)=>{ const n=parseInt(e.target.value||'1',10); const clamped=isNaN(n)?1:Math.max(1,Math.min(maxQty,n)); onQuantityChange(clamped) }}
+            onBlur={(e)=>{ const n=parseInt(e.target.value||'1',10); const clamped=isNaN(n)?1:Math.max(1,Math.min(maxQty,n)); if(clamped!==quantity) onQuantityChange(clamped) }}
           />
         </div>
 
@@ -298,9 +305,7 @@ export default function RegisterPopup({
                   </div>
                 ))}
                 {feeHadError && (
-                  <div className="fee-hint">
-                    Showing estimate. Final fees will appear at checkout.
-                  </div>
+                  <div className="fee-hint">Showing estimate. Final fees will appear at checkout.</div>
                 )}
                 {method === 'pagoMovil' && (fee?.currency?.toUpperCase?.() !== 'VES') && vesRate > 0 && (
                   <div className="fee-hint">Converted at {vesRate} Bs/USD.</div>
@@ -313,29 +318,29 @@ export default function RegisterPopup({
         {/* Method tabs */}
         <div className="method-tabs">
           <button className={`tab ${method==='card' ? 'active' : ''}`} onClick={() => setMethod('card')} disabled={!canPay && method!=='card'}>Card</button>
-          {!!payments?.pagoMovil?.enabled && <button className={`tab ${method==='pagoMovil' ? 'active' : ''}`} onClick={() => setMethod('pagoMovil')} disabled={!canPay && method!=='pagoMovil'}>Pago Móvil</button>}
-          {!!payments?.zelle?.enabled && <button className={`tab ${method==='zelle' ? 'active' : ''}`} onClick={() => setMethod('zelle')} disabled={!canPay && method!=='zelle'}>Zelle</button>}
-          {!!payments?.cash?.enabled && <button className={`tab ${method==='cash' ? 'active' : ''}`} onClick={() => setMethod('cash')} disabled={!canPay && method!=='cash'}>Cash</button>}
+          {showPM    && <button className={`tab ${method==='pagoMovil' ? 'active' : ''}`} onClick={() => setMethod('pagoMovil')} disabled={!canPay && method!=='pagoMovil'}>Pago Móvil</button>}
+          {showZelle && <button className={`tab ${method==='zelle' ? 'active' : ''}`} onClick={() => setMethod('zelle')} disabled={!canPay && method!=='zelle'}>Zelle</button>}
+          {showCash  && <button className={`tab ${method==='cash' ? 'active' : ''}`}  onClick={() => setMethod('cash')}  disabled={!canPay && method!=='cash'}>Cash</button>}
         </div>
 
         {method !== 'card' && (
           <div className="alt-details">
-            {method === 'pagoMovil' && payments?.pagoMovil?.enabled && (
+            {method === 'pagoMovil' && showPM && (
               <div className="alt-box">
                 {payments.pagoMovil.phone && <div>📱 {payments.pagoMovil.phone}</div>}
-                {payments.pagoMovil.ci && <div>🪪 CI: {payments.pagoMovil.ci}</div>}
-                {payments.pagoMovil.bank && <div>🏦 {payments.pagoMovil.bank}</div>}
+                {payments.pagoMovil.ci    && <div>🪪 CI: {payments.pagoMovil.ci}</div>}
+                {payments.pagoMovil.bank  && <div>🏦 {payments.pagoMovil.bank}</div>}
                 <div className="alt-note">After paying via Pago Móvil, press <strong>Pay</strong> to notify the organizer.</div>
               </div>
             )}
-            {method === 'zelle' && payments?.zelle?.enabled && (
+            {method === 'zelle' && showZelle && (
               <div className="alt-box">
                 {payments.zelle.email && <div>📧 {payments.zelle.email}</div>}
                 {payments.zelle.phone && <div>📞 {payments.zelle.phone}</div>}
                 <div className="alt-note">After sending your Zelle payment, press <strong>Pay</strong> to notify the organizer.</div>
               </div>
             )}
-            {method === 'cash' && payments?.cash?.enabled && (
+            {method === 'cash' && showCash && (
               <div className="alt-box">
                 {payments.cash.note && <div>📝 {payments.cash.note}</div>}
                 <div className="alt-note">Press <strong>Pay</strong> to notify the organizer that you’ll pay in cash.</div>
@@ -345,11 +350,17 @@ export default function RegisterPopup({
         )}
 
         <div className="pay-buttons">
-          <button className="buy-button" disabled={!canPay} onClick={handleConfirm}
-                  style={submitting ? { pointerEvents: 'none', opacity: 0.6 } : {}}>
-            {submitting ? (method==='card' ? 'Processing…' : 'Sending…')
-                        : (method==='card' ? 'Pay with card' : `Pay (${methodPretty})`)}
+          <button
+            className="buy-button"
+            disabled={!canPay}
+            onClick={handleConfirm}
+            style={submitting ? { pointerEvents: 'none', opacity: 0.6 } : {}}
+          >
+            {submitting
+              ? (method==='card' ? 'Processing…' : 'Sending…')
+              : (method==='card' ? 'Pay with card' : `Pay (${methodPretty})`)}
           </button>
+
           {method !== 'card' && (
             <p className="pay-hint">
               Manual methods notify the organizer. You’ll get your ticket by email after they confirm.
