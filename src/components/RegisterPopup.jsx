@@ -4,7 +4,7 @@ import './RegisterPopup.css'
 const API = 'https://backendevent-etce.onrender.com'
 
 export default function RegisterPopup({
-  eventId,              // 👈 NEW: required for fee quote
+  eventId,
   tiers,
   loading = false,
   error = null,
@@ -22,10 +22,14 @@ export default function RegisterPopup({
   // --- Fee state ---
   const [fee, setFee] = useState(null)
   const [feeLoading, setFeeLoading] = useState(false)
-  const [feeErr, setFeeErr] = useState(null)
+  const [feeAuthNeeded, setFeeAuthNeeded] = useState(false) // 👈 soft hint instead of red error
+  const [feeHadError, setFeeHadError] = useState(false)
+
+  const token = typeof window !== 'undefined' ? (localStorage.getItem('token') || '') : ''
 
   const fmtPrice = (n) => `$${Number(n || 0).toFixed(2)}`
   const centsToUSD = (c) => `$${((Number(c || 0)) / 100).toFixed(2)}`
+  const usdToCents = (n) => Math.round(Number(n || 0) * 100)
 
   const splitDescription = (txt) =>
     !txt
@@ -37,7 +41,7 @@ export default function RegisterPopup({
             .filter(Boolean)
         )]
 
-  // ---------- Availability helpers (mirrors iOS) ----------
+  // ---------- Availability helpers ----------
   const isSoldOut      = (t) => Number(t?.availableQuantity ?? 0) <= 0
   const hasNotStarted  = (t, now) => (t?.startTime ? now < new Date(t.startTime) : false)
   const hasEnded       = (t, now) => (t?.endTime ? now > new Date(t.endTime) : false)
@@ -61,7 +65,7 @@ export default function RegisterPopup({
   const isLockedByOrder = (t) => {
     const force = !!t?.forceOpen
     if (force) return false
-    if (nextId == null) return false // if unknown, don't order-lock
+    if (nextId == null) return false
     return t.id !== nextId
   }
 
@@ -127,11 +131,22 @@ export default function RegisterPopup({
     onPay?.(method)
   }
 
-  // === Fee quote fetch (mirrors iOS /quote) ===
+  // === Fee quote fetch ===
   useEffect(() => {
-    // Only fetch when we have everything necessary
+    // Reset states
+    setFeeHadError(false)
+    setFeeAuthNeeded(false)
+
     if (!eventId || !selectedTierId || quantity < 1) {
-      setFee(null); setFeeErr(null); setFeeLoading(false)
+      setFee(null); setFeeLoading(false)
+      return
+    }
+
+    // If not logged in, don't call the API; show an estimate
+    if (!token) {
+      setFee(null)
+      setFeeLoading(false)
+      setFeeAuthNeeded(true)
       return
     }
 
@@ -141,9 +156,6 @@ export default function RegisterPopup({
     const fetchFee = async () => {
       try {
         setFeeLoading(true)
-        setFeeErr(null)
-        const token = localStorage.getItem('token') || ''
-
         const params = new URLSearchParams({
           eventId: String(eventId),
           ticketTierId: String(selectedTierId),
@@ -153,14 +165,26 @@ export default function RegisterPopup({
         const url = `${API}/api/tickets/quote?${params.toString()}`
         const res = await fetch(url, {
           method: 'GET',
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
+          headers: { Authorization: `Bearer ${token}` },
           signal: controller.signal,
         })
+
+        if (res.status === 401) {
+          if (!cancelled) {
+            setFee(null)
+            setFeeAuthNeeded(true) // soft hint
+          }
+          return
+        }
+
         if (!res.ok) throw new Error(`fee ${res.status}`)
         const data = await res.json()
         if (!cancelled) setFee(data || null)
-      } catch (e) {
-        if (!cancelled) { setFee(null); setFeeErr(e.message || 'fee error') }
+      } catch {
+        if (!cancelled) {
+          setFee(null)
+          setFeeHadError(true) // fallback to estimate
+        }
       } finally {
         if (!cancelled) setFeeLoading(false)
       }
@@ -168,35 +192,41 @@ export default function RegisterPopup({
 
     fetchFee()
     return () => { cancelled = true; controller.abort() }
-  }, [eventId, selectedTierId, quantity, method])
+  }, [eventId, selectedTierId, quantity, method, token])
 
-  // Derived fee rows
+  // Build rows from either live fee or local estimate
   const feeRows = useMemo(() => {
-    if (!fee) return null
-    // Expected DTO from backend (like iOS):
-    // currency, subtotalCents, platformFeeCents, stripeFeeCents, serviceFeeCents, totalCents...
     const rows = []
+    const hasLive = !!fee && typeof fee.totalCents === 'number'
+    const price = Number(selectedTier?.price ?? 0)
 
-    if (typeof fee.subtotalCents === 'number') {
+    if (hasLive) {
       const qtyText = selectedTier ? `${selectedTier.name} ×${quantity}` : 'Subtotal'
-      rows.push({ label: qtyText, value: centsToUSD(fee.subtotalCents), strong: false })
-    }
-    if (typeof fee.serviceFeeCents === 'number') {
-      rows.push({ label: 'Service fee', value: centsToUSD(fee.serviceFeeCents), strong: false })
-    }
-    // Optionally show Stripe fee line if backend returns it
-    if (typeof fee.stripeFeeCents === 'number' && fee.stripeFeeCents > 0 && method === 'card') {
-      rows.push({ label: 'Stripe fee', value: centsToUSD(fee.stripeFeeCents), strong: false })
-    }
-    // Platform fee if returned and not 0
-    if (typeof fee.platformFeeCents === 'number' && fee.platformFeeCents > 0) {
-      rows.push({ label: 'Platform fee', value: centsToUSD(fee.platformFeeCents), strong: false })
+      if (typeof fee.subtotalCents === 'number') {
+        rows.push({ label: qtyText, value: centsToUSD(fee.subtotalCents), strong: false })
+      }
+      if (typeof fee.serviceFeeCents === 'number' && fee.serviceFeeCents > 0) {
+        rows.push({ label: 'Service fee', value: centsToUSD(fee.serviceFeeCents), strong: false })
+      }
+      if (method === 'card' && typeof fee.stripeFeeCents === 'number' && fee.stripeFeeCents > 0) {
+        rows.push({ label: 'Stripe fee', value: centsToUSD(fee.stripeFeeCents), strong: false })
+      }
+      if (typeof fee.platformFeeCents === 'number' && fee.platformFeeCents > 0) {
+        rows.push({ label: 'Platform fee', value: centsToUSD(fee.platformFeeCents), strong: false })
+      }
+      rows.push({ label: 'Total', value: centsToUSD(fee.totalCents), strong: true })
+      return { rows, isEstimate: false }
     }
 
-    if (typeof fee.totalCents === 'number') {
-      rows.push({ label: 'Total', value: centsToUSD(fee.totalCents), strong: true })
-    }
-    return rows
+    // Fallback: local estimate (no fees)
+    const subtotalCents = usdToCents(price * quantity)
+    rows.push({
+      label: selectedTier ? `${selectedTier.name} ×${quantity}` : 'Subtotal',
+      value: centsToUSD(subtotalCents),
+      strong: false
+    })
+    rows.push({ label: 'Total (est.)', value: centsToUSD(subtotalCents), strong: true })
+    return { rows, isEstimate: true }
   }, [fee, selectedTier, quantity, method])
 
   return (
@@ -223,9 +253,7 @@ export default function RegisterPopup({
                   className={['ticket-tier', 'rich', selected ? 'selected' : '', unavailable ? 'disabled' : '']
                     .join(' ')
                     .trim()}
-                  onClick={() => {
-                    if (!unavailable) onSelectTier(tier.id)
-                  }}
+                  onClick={() => { if (!unavailable) onSelectTier(tier.id) }}
                 >
                   <div className="tier-row">
                     <div className="tier-name">{tier.name}</div>
@@ -234,9 +262,7 @@ export default function RegisterPopup({
 
                   {desc.length > 0 && (
                     <ul className="tier-desc">
-                      {desc.map((li, i) => (
-                        <li key={i}>{li}</li>
-                      ))}
+                      {desc.map((li, i) => <li key={i}>{li}</li>)}
                     </ul>
                   )}
 
@@ -247,7 +273,9 @@ export default function RegisterPopup({
                       !tier.forceOpen &&
                       !isSoldOut(tier) &&
                       !hasNotStarted(tier, Date.now()) &&
-                      !hasEnded(tier, Date.now()) && <span className="chip warn">Next tier not open</span>}
+                      !hasEnded(tier, Date.now()) && (
+                      <span className="chip warn">Next tier not open</span>
+                    )}
                   </div>
                 </div>
               )
@@ -258,10 +286,7 @@ export default function RegisterPopup({
 
         <div className="ticket-quantity">
           <label>
-            Quantity{' '}
-            <span style={{ opacity: 0.6, marginLeft: 6 }}>
-              (max {maxQty})
-            </span>
+            Quantity <span style={{ opacity: 0.6, marginLeft: 6 }}></span>
           </label>
           <input
             type="number"
@@ -287,66 +312,39 @@ export default function RegisterPopup({
           <div className="fee-box" aria-live="polite">
             {feeLoading ? (
               <div className="fee-row muted">Calculating fees…</div>
-            ) : feeErr ? (
-              <div className="fee-row error">Couldn’t load fees.</div>
-            ) : feeRows && feeRows.length ? (
+            ) : (
               <>
-                {feeRows.slice(0, -1).map((r, idx) => (
+                {feeRows.rows.slice(0, -1).map((r, idx) => (
                   <div className="fee-row" key={idx}>
                     <span className="fee-label">{r.label}</span>
                     <span className="fee-value">{r.value}</span>
                   </div>
                 ))}
                 <div className="fee-divider" />
-                {feeRows.slice(-1).map((r, idx) => (
-                  <div className="fee-row total" key={`t-${idx}`}>
+                {feeRows.rows.slice(-1).map((r, idx) => (
+                  <div className={`fee-row ${r.strong ? 'total' : ''}`} key={`t-${idx}`}>
                     <span className="fee-label">{r.label}</span>
                     <span className="fee-value">{r.value}</span>
                   </div>
                 ))}
+                {(feeAuthNeeded || feeHadError) && (
+                  <div className="fee-hint">
+                    {feeAuthNeeded
+                      ? 'Sign in to see final fees.'
+                      : 'Showing estimate. Final fees will appear at checkout.'}
+                  </div>
+                )}
               </>
-            ) : (
-              <div className="fee-row muted">No fee info.</div>
             )}
           </div>
         )}
 
         {/* Method tabs */}
         <div className="method-tabs">
-          <button
-            className={`tab ${method === 'card' ? 'active' : ''}`}
-            onClick={() => setMethod('card')}
-            disabled={!canPay && method !== 'card'}
-          >
-            Card
-          </button>
-          {showPM && (
-            <button
-              className={`tab ${method === 'pagoMovil' ? 'active' : ''}`}
-              onClick={() => setMethod('pagoMovil')}
-              disabled={!canPay && method !== 'pagoMovil'}
-            >
-              Pago Móvil
-            </button>
-          )}
-          {showZelle && (
-            <button
-              className={`tab ${method === 'zelle' ? 'active' : ''}`}
-              onClick={() => setMethod('zelle')}
-              disabled={!canPay && method !== 'zelle'}
-            >
-              Zelle
-            </button>
-          )}
-          {showCash && (
-            <button
-              className={`tab ${method === 'cash' ? 'active' : ''}`}
-              onClick={() => setMethod('cash')}
-              disabled={!canPay && method !== 'cash'}
-            >
-              Cash
-            </button>
-          )}
+          <button className={`tab ${method==='card' ? 'active' : ''}`} onClick={() => setMethod('card')} disabled={!canPay && method!=='card'}>Card</button>
+          {showPM   && <button className={`tab ${method==='pagoMovil' ? 'active' : ''}`} onClick={() => setMethod('pagoMovil')} disabled={!canPay && method!=='pagoMovil'}>Pago Móvil</button>}
+          {showZelle&& <button className={`tab ${method==='zelle' ? 'active' : ''}`} onClick={() => setMethod('zelle')} disabled={!canPay && method!=='zelle'}>Zelle</button>}
+          {showCash && <button className={`tab ${method==='cash' ? 'active' : ''}`} onClick={() => setMethod('cash')} disabled={!canPay && method!=='cash'}>Cash</button>}
         </div>
 
         {method !== 'card' && (
@@ -356,26 +354,20 @@ export default function RegisterPopup({
                 {payments.pagoMovil.phone && <div>📱 {payments.pagoMovil.phone}</div>}
                 {payments.pagoMovil.ci && <div>🪪 CI: {payments.pagoMovil.ci}</div>}
                 {payments.pagoMovil.bank && <div>🏦 {payments.pagoMovil.bank}</div>}
-                <div className="alt-note">
-                  After paying via Pago Móvil, press <strong>Pay</strong> to notify the organizer.
-                </div>
+                <div className="alt-note">After paying via Pago Móvil, press <strong>Pay</strong> to notify the organizer.</div>
               </div>
             )}
             {method === 'zelle' && showZelle && (
               <div className="alt-box">
                 {payments.zelle.email && <div>📧 {payments.zelle.email}</div>}
                 {payments.zelle.phone && <div>📞 {payments.zelle.phone}</div>}
-                <div className="alt-note">
-                  After sending your Zelle payment, press <strong>Pay</strong> to notify the organizer.
-                </div>
+                <div className="alt-note">After sending your Zelle payment, press <strong>Pay</strong> to notify the organizer.</div>
               </div>
             )}
             {method === 'cash' && showCash && (
               <div className="alt-box">
                 {payments.cash.note && <div>📝 {payments.cash.note}</div>}
-                <div className="alt-note">
-                  Press <strong>Pay</strong> to notify the organizer that you’ll pay in cash.
-                </div>
+                <div className="alt-note">Press <strong>Pay</strong> to notify the organizer that you’ll pay in cash.</div>
               </div>
             )}
           </div>
@@ -388,7 +380,10 @@ export default function RegisterPopup({
             onClick={handleConfirm}
             style={submitting ? { pointerEvents: 'none', opacity: 0.6 } : {}}
           >
-            {submitting ? (method === 'card' ? 'Processing…' : 'Sending…') : method === 'card' ? 'Pay with card' : `Pay (${methodPretty})`}
+            {submitting
+              ? (method === 'card' ? 'Processing…' : 'Sending…')
+              : (method === 'card' ? 'Pay with card' : `Pay (${methodPretty})`)
+            }
           </button>
 
           {method !== 'card' && (
