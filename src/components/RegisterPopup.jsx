@@ -3,6 +3,33 @@ import './RegisterPopup.css'
 
 const API = 'https://backendevent-etce.onrender.com'
 
+// ---- tiny helpers to read/refresh token ----
+function getValidTokenFromLS() {
+  const t = localStorage.getItem('token') || ''
+  if (!t || t === 'undefined') return null
+  try {
+    const [, b] = t.split('.')
+    if (!b) return t
+    const payload = JSON.parse(atob(b.replace(/-/g, '+').replace(/_/g, '/')))
+    if (payload?.exp && Date.now() >= payload.exp * 1000) return null
+  } catch {}
+  return t
+}
+function useAuthToken() {
+  const [tok, setTok] = useState(getValidTokenFromLS())
+  useEffect(() => {
+    const onFocus = () => setTok(getValidTokenFromLS())
+    const onAuth = () => setTok(getValidTokenFromLS())
+    window.addEventListener('focus', onFocus)
+    window.addEventListener('auth:login', onAuth)
+    return () => {
+      window.removeEventListener('focus', onFocus)
+      window.removeEventListener('auth:login', onAuth)
+    }
+  }, [])
+  return tok
+}
+
 export default function RegisterPopup({
   eventId,
   tiers,
@@ -22,53 +49,21 @@ export default function RegisterPopup({
   // --- Fee state ---
   const [fee, setFee] = useState(null)
   const [feeLoading, setFeeLoading] = useState(false)
-  const [feeAuthNeeded, setFeeAuthNeeded] = useState(false) // 👈 soft hint instead of red error
+  const [feeAuthNeeded, setFeeAuthNeeded] = useState(false)
   const [feeHadError, setFeeHadError] = useState(false)
 
-  function getValidTokenFromLS() {
-    const t = localStorage.getItem('token') || '';
-    if (!t || t === 'undefined') return null;
-    try {
-      const [_, b] = t.split('.');
-      const payload = JSON.parse(atob(b.replace(/-/g,'+').replace(/_/g,'/')));
-      if (payload?.exp && Date.now() >= payload.exp * 1000) return null;
-    } catch {}
-    return t;
-  }
-  
-  function useAuthToken() {
-    const [tok, setTok] = useState(getValidTokenFromLS());
-  
-    useEffect(() => {
-      const onFocus = () => setTok(getValidTokenFromLS());
-      const onAuth = () => setTok(getValidTokenFromLS()); // custom event after login
-      window.addEventListener('focus', onFocus);
-      window.addEventListener('auth:login', onAuth);
-      return () => {
-        window.removeEventListener('focus', onFocus);
-        window.removeEventListener('auth:login', onAuth);
-      };
-    }, []);
-  
-    return tok;
-  }
-  
-
-  const token = useAuthToken();
+  const token = useAuthToken()
 
   const fmtPrice = (n) => `$${Number(n || 0).toFixed(2)}`
   const centsToUSD = (c) => `$${((Number(c || 0)) / 100).toFixed(2)}`
   const usdToCents = (n) => Math.round(Number(n || 0) * 100)
 
   const splitDescription = (txt) =>
-    !txt
-      ? []
-      : [...new Set(
-          txt
-            .split(/[\n•;]| - |\u2022/g)
-            .map((s) => s.replace(/^[-•\u2022]\s*/, '').trim())
-            .filter(Boolean)
-        )]
+    !txt ? [] : [...new Set(
+      txt.split(/[\n•;]| - |\u2022/g)
+         .map((s) => s.replace(/^[-•\u2022]\s*/, '').trim())
+         .filter(Boolean)
+    )]
 
   // ---------- Availability helpers ----------
   const isSoldOut      = (t) => Number(t?.availableQuantity ?? 0) <= 0
@@ -162,7 +157,6 @@ export default function RegisterPopup({
 
   // === Fee quote fetch ===
   useEffect(() => {
-    // Reset states
     setFeeHadError(false)
     setFeeAuthNeeded(false)
 
@@ -201,7 +195,7 @@ export default function RegisterPopup({
         if (res.status === 401) {
           if (!cancelled) {
             setFee(null)
-            setFeeAuthNeeded(true) // soft hint
+            setFeeAuthNeeded(true)
           }
           return
         }
@@ -212,7 +206,7 @@ export default function RegisterPopup({
       } catch {
         if (!cancelled) {
           setFee(null)
-          setFeeHadError(true) // fallback to estimate
+          setFeeHadError(true)
         }
       } finally {
         if (!cancelled) setFeeLoading(false)
@@ -315,7 +309,7 @@ export default function RegisterPopup({
 
         <div className="ticket-quantity">
           <label>
-            Quantity <span style={{ opacity: 0.6, marginLeft: 6 }}></span>
+            Quantity <span style={{ opacity: 0.6, marginLeft: 6 }}>(max {maxQty})</span>
           </label>
           <input
             type="number"

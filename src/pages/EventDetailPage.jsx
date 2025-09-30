@@ -105,7 +105,7 @@ export default function EventDetailPage() {
       setTiersLoading(true)
       setTiersErr(null)
 
-      // helpers that mirror the iOS logic
+      // helpers
       const isSoldOut = (t) => Number(t?.availableQuantity ?? 0) <= 0
       const hasNotStarted = (t, now) => t?.startTime ? now < new Date(t.startTime) : false
       const hasEnded = (t, now) => t?.endTime ? now > new Date(t.endTime) : false
@@ -122,7 +122,6 @@ export default function EventDetailPage() {
 
         if (savedOk) return setSelectedTierId(saved)
 
-        // next available by tierOrder
         const sorted = finalList.slice().sort((a,b) => (a.tierOrder ?? 0) - (b.tierOrder ?? 0))
         const next = sorted.find(t => !isSoldOut(t) && !isLockedByTime(t, now))
         setSelectedTierId(next?.id ?? (finalList[0]?.id ?? null))
@@ -136,7 +135,6 @@ export default function EventDetailPage() {
         if (res.status === 401) { setShowAuth(true); return }
 
         if (res.status === 404) {
-          // fallback to embedded tiers
           pickDefault(event?.ticketTiers || [])
           return
         }
@@ -178,10 +176,7 @@ export default function EventDetailPage() {
     },
   } : null
 
-  /**
-   * Handle checkout; method: 'card' | 'zelle' | 'pagoMovil' | 'cash'
-   * Locked so it can’t fire twice.
-   */
+  // Handle checkout
   const handleBuy = async (method = 'card') => {
     if (checkingOut || clickedOnceRef.current) return
     clickedOnceRef.current = true
@@ -213,13 +208,13 @@ export default function EventDetailPage() {
 
       const data = await res.json()
 
-      // free path
+      // free
       if (data.free === true || data.free === 'true') {
         window.location.href = `/#/success?eventId=${id}`
         return
       }
 
-      // manual methods → redirect with pending & since (to avoid showing old confirmed tickets)
+      // manual methods
       if (data.manual === true) {
         setShowPopup(false)
         const methodLower = String(method || 'card').toLowerCase()
@@ -229,11 +224,10 @@ export default function EventDetailPage() {
         return
       }
 
-      // card path → open Stripe
+      // stripe card
       if (data.clientSecret) {
         setClientSecret(data.clientSecret)
         setShowPopup(false)
-        // keep checkingOut locked until Stripe modal flow finishes
         return
       }
 
@@ -242,7 +236,6 @@ export default function EventDetailPage() {
       console.error('❌ Checkout failed:', err)
       alert('Checkout error. Try again.')
     } finally {
-      // Unlock only if we didn’t open Stripe
       setCheckingOut(false)
       clickedOnceRef.current = false
     }
@@ -369,29 +362,29 @@ export default function EventDetailPage() {
       </footer>
 
       {showPopup && (
-  <RegisterPopup
-    eventId={id}                     // 👈 NEW
-    tiers={tiers.length ? tiers : (event.ticketTiers || [])}
-    loading={tiersLoading}
-    error={tiersErr}
-    selectedTierId={selectedTierId}
-    quantity={quantity}
-    submitting={checkingOut}
-    payments={payments}
-    onClose={() => {
-      setShowPopup(false)
-      setSelectedTierId(null)
-      setCheckingOut(false)
-      clickedOnceRef.current = false
-    }}
-    onSelectTier={(tierId) => {
-      setSelectedTierId(tierId)
-      try { localStorage.setItem(`lastTier:${id}`, String(tierId)) } catch {}
-    }}
-    onQuantityChange={setQuantity}
-    onPay={(method) => handleBuy(method ?? 'card')}
-  />
-)}
+        <RegisterPopup
+          eventId={id}
+          tiers={tiers.length ? tiers : (event.ticketTiers || [])}
+          loading={tiersLoading}
+          error={tiersErr}
+          selectedTierId={selectedTierId}
+          quantity={quantity}
+          submitting={checkingOut}
+          payments={payments}
+          onClose={() => {
+            setShowPopup(false)
+            setSelectedTierId(null)
+            setCheckingOut(false)
+            clickedOnceRef.current = false
+          }}
+          onSelectTier={(tierId) => {
+            setSelectedTierId(tierId)
+            try { localStorage.setItem(`lastTier:${id}`, String(tierId)) } catch {}
+          }}
+          onQuantityChange={setQuantity}
+          onPay={(method) => handleBuy(method ?? 'card')}
+        />
+      )}
 
       {clientSecret && (
         <div className="popup-overlay" onClick={() => setClientSecret(null)}>

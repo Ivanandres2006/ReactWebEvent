@@ -12,8 +12,8 @@ export default function AuthModal({ onClose }) {
   const [form, setForm] = useState({
     firstName: '',
     lastName: '',
-    username: '',          // <-- needed for register
-    emailOrUsername: '',   // <-- user can type email OR username
+    username: '',
+    emailOrUsername: '',
     password: '',
   })
 
@@ -25,16 +25,15 @@ export default function AuthModal({ onClose }) {
       const url = isLogin ? `${API}/auth/login` : `${API}/auth/register`
       const payload = isLogin
         ? {
-            // ✅ backend expects identifier, not email
-            identifier: form.emailOrUsername,
+            identifier: form.emailOrUsername, // backend expects identifier
             password: form.password,
           }
         : {
             firstName: form.firstName,
             lastName: form.lastName,
-            username: form.username,           // ✅ required by backend
+            username: form.username,
             email: form.emailOrUsername,
-            phone: '',                         // optional
+            phone: '',
             password: form.password,
             useSms: false,
           }
@@ -53,18 +52,21 @@ export default function AuthModal({ onClose }) {
       }
 
       if (isLogin) {
+        // accept a variety of field names just in case
         const access = data.accessToken || data.token || data.jwt || ''
-                if (!access) {
-                   alert('Login succeeded but no access token was returned.');
-                   setLoading(false);
-                   return;
-                  }
-                  localStorage.setItem('token', access)
-  if (data.refreshToken) localStorage.setItem('refreshToken', data.refreshToken)
+        if (!access) {
+          alert('Login succeeded but no access token was returned.')
+          setLoading(false)
+          return
+        }
+        localStorage.setItem('token', access)
+        if (data.refreshToken) localStorage.setItem('refreshToken', data.refreshToken)
+        // 🔔 notify app pieces listening for login
+        window.dispatchEvent(new Event('auth:login'))
         setLoading(false)
         onClose()
       } else {
-        // registration -> go verify step
+        // go to verify step
         setLoading(false)
         setStep('verify')
       }
@@ -73,8 +75,6 @@ export default function AuthModal({ onClose }) {
       alert('Network error. Try again.')
     }
   }
-
-  
 
   async function handleVerifySubmit(e) {
     e.preventDefault()
@@ -94,9 +94,10 @@ export default function AuthModal({ onClose }) {
         setLoading(false)
         return
       }
-      // verify returns accessToken + refreshToken
       localStorage.setItem('token', data.accessToken)
       if (data.refreshToken) localStorage.setItem('refreshToken', data.refreshToken)
+      // 🔔 let listeners refresh their token state
+      window.dispatchEvent(new Event('auth:login'))
       setLoading(false)
       onClose()
     } catch {
@@ -138,7 +139,6 @@ export default function AuthModal({ onClose }) {
                 </>
               )}
 
-              {/* One field for email OR username */}
               <input
                 type="text"
                 placeholder="Email or Username"
