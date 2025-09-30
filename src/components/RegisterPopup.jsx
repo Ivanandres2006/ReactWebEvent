@@ -1,6 +1,6 @@
-// RegisterPopup.jsx
 import React, { useMemo, useState, useEffect } from 'react'
 import './RegisterPopup.css'
+import { fetchWithAuth, getAccessToken } from '../lib/authClient'
 
 const API = 'https://backendevent-etce.onrender.com'
 
@@ -8,32 +8,6 @@ const API = 'https://backendevent-etce.onrender.com'
 const FALLBACK_VES_RATE = 179.2
 const ENV_VES_RATE = Number(import.meta?.env?.VITE_VES_PER_USD || 0)
 const LS_VES_RATE  = Number(localStorage.getItem('ves_rate') || 0)
-
-function getValidTokenFromLS() {
-  const t = localStorage.getItem('token') || ''
-  if (!t || t === 'undefined') return null
-  try {
-    const [, b] = t.split('.')
-    if (!b) return t
-    const payload = JSON.parse(atob(b.replace(/-/g, '+').replace(/_/g, '/')))
-    if (payload?.exp && Date.now() >= payload.exp * 1000) return null
-  } catch {}
-  return t
-}
-function useAuthToken() {
-  const [tok, setTok] = useState(getValidTokenFromLS())
-  useEffect(() => {
-    const onFocus = () => setTok(getValidTokenFromLS())
-    const onAuth  = () => setTok(getValidTokenFromLS())
-    window.addEventListener('focus', onFocus)
-    window.addEventListener('auth:login', onAuth)
-    return () => {
-      window.removeEventListener('focus', onFocus)
-      window.removeEventListener('auth:login', onAuth)
-    }
-  }, [])
-  return tok
-}
 
 export default function RegisterPopup({
   eventId, tiers, loading=false, error=null,
@@ -46,7 +20,13 @@ export default function RegisterPopup({
   const [feeLoading, setFeeLoading] = useState(false)
   const [feeHadError, setFeeHadError] = useState(false)
 
-  const token = useAuthToken()
+  // re-read token when login happens in modal
+  const [token, setToken] = useState(getAccessToken())
+  useEffect(() => {
+    const onAuth = () => setToken(getAccessToken())
+    window.addEventListener('auth:login', onAuth)
+    return () => window.removeEventListener('auth:login', onAuth)
+  }, [])
 
   // ===== Detect Venezuela -> hide Card =====
   const isVenezuela = useMemo(() => {
@@ -176,7 +156,7 @@ export default function RegisterPopup({
 
   const handleConfirm = () => { if (canPay) onPay?.(method) }
 
-  // ===== Fee quote fetch
+  // ===== Fee quote fetch (auth + retry-once logic)
   useEffect(() => {
     setFeeHadError(false)
     if (!eventId || !selectedTierId || quantity < 1) {
@@ -196,9 +176,9 @@ export default function RegisterPopup({
           paymentMethod: method,
         })
         const url = `${API}/api/tickets/quote?${params.toString()}`
-        const headers = token ? { Authorization: `Bearer ${token}` } : undefined
-        let res = await fetch(url, { method: 'GET', headers, signal: controller.signal })
-        if (res.status === 401 && headers) {
+        let res = await fetchWithAuth(url, { method: 'GET', signal: controller.signal })
+        // If still not ok and endpoint allows public quoting, try without auth:
+        if (!res.ok && res.status !== 401) {
           res = await fetch(url, { method: 'GET', signal: controller.signal })
         }
         if (!res.ok) throw new Error(`fee ${res.status}`)

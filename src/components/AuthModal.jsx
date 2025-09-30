@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import './AuthModal.css'
+import { saveTokens } from '../lib/authClient'
 
 const API = 'https://backendevent-etce.onrender.com'
 
@@ -55,9 +56,7 @@ export default function AuthModal({ onClose }) {
           setLoading(false)
           return
         }
-        localStorage.setItem('token', access)
-        if (data.refreshToken) localStorage.setItem('refreshToken', data.refreshToken)
-        window.dispatchEvent(new Event('auth:login')) // notify others
+        saveTokens({ accessToken: access, refreshToken: data.refreshToken })
         setLoading(false)
         onClose()
       } else {
@@ -85,9 +84,8 @@ export default function AuthModal({ onClose }) {
         setLoading(false)
         return
       }
-      localStorage.setItem('token', data.accessToken)
-      if (data.refreshToken) localStorage.setItem('refreshToken', data.refreshToken)
-      window.dispatchEvent(new Event('auth:login'))
+      const access = data.accessToken || data.token || data.jwt || ''
+      saveTokens({ accessToken: access, refreshToken: data.refreshToken })
       setLoading(false)
       onClose()
     } catch {

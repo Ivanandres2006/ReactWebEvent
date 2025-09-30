@@ -14,6 +14,7 @@ import 'leaflet/dist/leaflet.css'
 import markerIcon2x from 'leaflet/dist/images/marker-icon-2x.png'
 import markerIcon from 'leaflet/dist/images/marker-icon.png'
 import markerShadow from 'leaflet/dist/images/marker-shadow.png'
+import { fetchWithAuth, getAccessToken } from '../lib/authClient'
 
 delete L.Icon.Default.prototype._getIconUrl
 L.Icon.Default.mergeOptions({
@@ -49,24 +50,19 @@ export default function EventDetailPage() {
   const [checkingOut, setCheckingOut] = useState(false)
   const clickedOnceRef = useRef(false)
 
-  const token = localStorage.getItem('token')
-  const isLoggedIn = !!(token && token.length > 0)
+  const token = getAccessToken()
+  const isLoggedIn = !!token
 
   useEffect(() => {
     if (refCode) localStorage.setItem('wknd_ref', refCode)
   }, [refCode])
 
-  // Load user email
+  // Load user email (uses refresh/retry)
   useEffect(() => {
     if (!isLoggedIn) return
-    fetch(`${API}/user/me`, { headers: { Authorization: `Bearer ${token}` } })
+    fetchWithAuth(`${API}/user/me`)
       .then(async res => {
-        if (res.status === 401) {
-          const txt = await res.text()
-          if (txt.includes('JWT expired')) localStorage.removeItem('token')
-          setShowAuth(true)
-          throw new Error('401')
-        }
+        if (res.status === 401) { setShowAuth(true); throw new Error('401') }
         if (!res.ok) throw new Error('Failed to fetch user')
         return res.json()
       })
@@ -74,12 +70,14 @@ export default function EventDetailPage() {
         if (d?.email) {
           setEmail(d.email)
           localStorage.setItem('email', d.email)
+        } else {
+          setShowAuth(true)
         }
       })
       .catch(() => {})
-  }, [isLoggedIn, token])
+  }, [isLoggedIn])
 
-  // Load event
+  // Load event (public)
   useEffect(() => {
     if (!id) return
     ;(async () => {
@@ -96,50 +94,37 @@ export default function EventDetailPage() {
     })()
   }, [id])
 
-  // Load tiers when popup opens
+  // Load tiers when popup opens (try auth, fall back to public)
   useEffect(() => {
     if (!showPopup || !id) return
     const lsKey = `lastTier:${id}`
 
-    const loadTiers = async () => {
-      setTiersLoading(true)
-      setTiersErr(null)
+    const isSoldOut = (t) => Number(t?.availableQuantity ?? 0) <= 0
+    const hasNotStarted = (t, now) => t?.startTime ? now < new Date(t.startTime) : false
+    const hasEnded = (t, now) => t?.endTime ? now > new Date(t.endTime) : false
+    const isLockedByTime = (t, now) => (!t?.forceOpen && hasNotStarted(t, now)) || hasEnded(t, now)
 
-      const isSoldOut = (t) => Number(t?.availableQuantity ?? 0) <= 0
-      const hasNotStarted = (t, now) => t?.startTime ? now < new Date(t.startTime) : false
-      const hasEnded = (t, now) => t?.endTime ? now > new Date(t.endTime) : false
-      const isLockedByTime = (t, now) => (!t?.forceOpen && hasNotStarted(t, now)) || hasEnded(t, now)
+    const pickDefault = (list) => {
+      const finalList = Array.isArray(list) ? list : []
+      setTiers(finalList)
+      const now = Date.now()
+      const saved = parseInt(localStorage.getItem(lsKey) || 'NaN', 10)
+      const savedObj = finalList.find(t => t?.id === saved)
+      const savedOk = savedObj && !isSoldOut(savedObj) && !isLockedByTime(savedObj, now)
+      if (savedOk) return setSelectedTierId(saved)
+      const sorted = finalList.slice().sort((a,b) => (a.tierOrder ?? 0) - (b.tierOrder ?? 0))
+      const next = sorted.find(t => !isSoldOut(t) && !isLockedByTime(t, now))
+      setSelectedTierId(next?.id ?? (finalList[0]?.id ?? null))
+    }
 
-      const pickDefault = (list) => {
-        const finalList = Array.isArray(list) ? list : []
-        setTiers(finalList)
-
-        const now = Date.now()
-        const saved = parseInt(localStorage.getItem(lsKey) || 'NaN', 10)
-        const savedObj = finalList.find(t => t?.id === saved)
-        const savedOk = savedObj && !isSoldOut(savedObj) && !isLockedByTime(savedObj, now)
-
-        if (savedOk) return setSelectedTierId(saved)
-
-        const sorted = finalList.slice().sort((a,b) => (a.tierOrder ?? 0) - (b.tierOrder ?? 0))
-        const next = sorted.find(t => !isSoldOut(t) && !isLockedByTime(t, now))
-        setSelectedTierId(next?.id ?? (finalList[0]?.id ?? null))
-      }
-
+    const load = async () => {
+      setTiersLoading(true); setTiersErr(null)
       try {
-        const res = await fetch(`${API}/events/${id}/tiers`, {
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
-        })
-
-        if (res.status === 401) { setShowAuth(true); return }
-
+        let res = await fetchWithAuth(`${API}/events/${id}/tiers`)
         if (res.status === 404) {
-          pickDefault(event?.ticketTiers || [])
-          return
+          pickDefault(event?.ticketTiers || []); return
         }
-
         if (!res.ok) throw new Error(`Tiers fetch failed: ${res.status}`)
-
         const data = await res.json()
         const list = Array.isArray(data) ? data : []
         pickDefault(list.length ? list : (event?.ticketTiers || []))
@@ -151,21 +136,14 @@ export default function EventDetailPage() {
         setTiersLoading(false)
       }
     }
-
-    loadTiers()
+    load()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showPopup, id, token])
+  }, [showPopup, id])
 
-  // ---- pull a VES-per-USD rate from the event (any of these field names will work)
+  // ---- VES rate candidates
   const vesRate =
-    event?.vesRate ??
-    event?.ves_rate ??
-    event?.vesPerUsd ??
-    event?.ves_per_usd ??
-    event?.fxVesPerUsd ??
-    event?.exchangeRateVes ??
-    event?.exchange_rate_ves ??
-    null
+    event?.vesRate ?? event?.ves_rate ?? event?.vesPerUsd ?? event?.ves_per_usd ??
+    event?.fxVesPerUsd ?? event?.exchangeRateVes ?? event?.exchange_rate_ves ?? null
 
   // Build dynamic payment options for the popup
   const payments = event ? {
@@ -181,7 +159,6 @@ export default function EventDetailPage() {
       phone: event.pagoMovilPhone || '',
       ci: event.pagoMovilCi || '',
       bank: event.pagoMovilBank || '',
-      // 👇 this makes RegisterPopup render prices/fees in Bolívares for Pago Móvil
       rate: typeof vesRate === 'number' ? vesRate : undefined, // VES per 1 USD
     },
     cash: {
@@ -211,12 +188,9 @@ export default function EventDetailPage() {
         paymentMethod: typeof method === 'string' ? method : 'card',
       }
 
-      const res = await fetch(`${API}/api/tickets/checkout`, {
+      const res = await fetchWithAuth(`${API}/api/tickets/checkout`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       })
 
@@ -303,7 +277,7 @@ export default function EventDetailPage() {
 
         <div className="event-about">
           <h3>About</h3>
-          <p>{event?.description || 'No description provided.'}</p>
+        <p>{event?.description || 'No description provided.'}</p>
         </div>
 
         <div className="event-map">
@@ -404,10 +378,8 @@ export default function EventDetailPage() {
                 clientSecret={clientSecret}
                 email={email}
                 onSuccess={async (paymentIntentId) => {
-                  const token = localStorage.getItem('token') || ''
-                  await fetch(`${API}/api/tickets/confirm?paymentIntentId=${encodeURIComponent(paymentIntentId)}`, {
-                    method: 'POST',
-                    headers: token ? { Authorization: `Bearer ${token}` } : {},
+                  await fetchWithAuth(`${API}/api/tickets/confirm?paymentIntentId=${encodeURIComponent(paymentIntentId)}`, {
+                    method: 'POST'
                   })
                   window.location.href = `/#/success?eventId=${id}&pi=${encodeURIComponent(paymentIntentId)}`
                 }}
