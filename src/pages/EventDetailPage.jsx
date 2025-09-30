@@ -340,7 +340,7 @@ export default function EventDetailPage() {
           <div className="links">
             <a
               className="footer-link"
-              href="https://instagram.com/wkndevent"
+              href="https://www.instagram.com/wknd.app/"
               target="_blank"
               rel="noreferrer"
               aria-label="Instagram"
