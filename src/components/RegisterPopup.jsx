@@ -268,7 +268,7 @@ export default function RegisterPopup({
         )}
 
         <div className="ticket-quantity">
-          <label>Quantity <span style={{opacity:0.6, marginLeft:6}}>(max {maxQty})</span></label>
+          <label>Quantity</label>
           <input
             type="number" min="1" max={maxQty} step="1" value={quantity}
             onChange={(e)=>{ const n=parseInt(e.target.value||'1',10); const clamped=isNaN(n)?1:Math.max(1,Math.min(maxQty,n)); onQuantityChange(clamped) }}
