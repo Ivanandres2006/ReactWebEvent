@@ -1,208 +1,103 @@
-.popup-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  z-index: 1000;
-  width: 100vw;
-  height: 100vh;
-  background: rgba(0, 0, 0, 0.6);
-  backdrop-filter: blur(6px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
+/* === Overlay & shell === */
+.popup-overlay{
+  position:fixed; inset:0; z-index:1000;
+  display:flex; align-items:center; justify-content:center;
+  background:rgba(0,0,0,.6); backdrop-filter:blur(6px);
+  padding: max(16px, env(safe-area-inset-bottom));
 }
 
-.popup-modal {
-  background: #0A0A23;
-  padding: 32px;
-  border-radius: 20px;
-  width: 90%;
-  max-width: 400px;
-  color: white;
-  animation: fadeInScale 0.25s ease;
-  box-shadow: 0 0 20px #00E67666;
+.popup-modal{
+  width:100%; max-width:420px; max-height:90vh;
+  overflow:auto;
+  background:#0A0A23; color:#fff;
+  padding:24px; border-radius:20px;
+  box-shadow:0 0 20px #00E67666;
+  animation:fadeInScale .22s ease;
+}
+@keyframes fadeInScale{ from{transform:scale(.95);opacity:0} to{transform:scale(1);opacity:1} }
+
+/* === Tier cards === */
+.ticket-tier{
+  background:#111729; border:1px solid #222; border-radius:14px;
+  padding:16px 16px; margin:10px 0;
+  display:flex; flex-direction:column; gap:8px; cursor:pointer;
+  transition:transform .15s ease, box-shadow .15s ease, border-color .15s ease, background .15s ease;
+}
+.ticket-tier:hover{ transform:translateY(-1px); box-shadow:0 4px 14px rgba(0,230,118,.12) }
+.ticket-tier.selected{ background:#0f1a2f; border-color:#00E676 }
+.ticket-tier.disabled{ opacity:.55; cursor:not-allowed }
+
+.tier-row{ display:flex; align-items:center; justify-content:space-between; gap:8px }
+.tier-name{ font-weight:700; font-size:16px }
+.tier-price{ font-variant-numeric:tabular-nums; font-weight:700; color:#00E676 }
+
+.tier-desc{ margin:2px 0 0; padding-left:18px; opacity:.9 }
+.tier-desc li{ margin:2px 0; line-height:1.25 }
+
+.tier-meta{ display:flex; flex-wrap:wrap; gap:6px; margin-top:6px }
+.chip{ font-size:12px; padding:4px 8px; border-radius:999px; background:rgba(255,255,255,.08) }
+.chip.warn{ background:rgba(255,165,0,.22) }
+.chip.light{ background:rgba(255,255,255,.06) }
+
+/* === Quantity === */
+.ticket-quantity{
+  display:flex; align-items:center; gap:10px; margin-top:14px;
+}
+.ticket-quantity label{ font-weight:600 }
+.ticket-quantity input{
+  width:70px; padding:9px 10px; text-align:center;
+  border-radius:10px; background:#1b1b2c; border:1px solid #3b415a; color:#fff;
 }
 
-@keyframes fadeInScale {
-  from { transform: scale(0.92); opacity: 0; }
-  to   { transform: scale(1);    opacity: 1; }
+/* === Method tabs (Card / Pago Móvil / Zelle / Cash) === */
+.method-tabs{
+  display:flex; flex-wrap:wrap; gap:10px; margin-top:16px;
 }
+.tab{
+  appearance:none; border:none; cursor:pointer;
+  padding:11px 16px; border-radius:12px;
+  background:#ffffff; color:#0b1220; font-weight:700;
+  box-shadow:inset 0 -2px 0 rgba(0,0,0,.12);
+  transition:transform .05s ease, box-shadow .15s ease, border-color .15s ease;
+}
+.tab.active{
+  outline:2px solid #00E676; outline-offset:0;
+  box-shadow:0 0 0 2px #00E67633;
+}
+.tab:active{ transform:translateY(1px) }
+.tab:disabled{ opacity:.55; cursor:not-allowed }
 
-/* base card */
-.ticket-tier {
-  background: #111729;
-  padding: 16px 20px;
-  margin: 12px 0;
-  border: 1px solid #222;
-  border-radius: 12px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  cursor: pointer;
-  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease, background 0.2s ease;
+/* === Manual method details === */
+.alt-details{ margin-top:10px }
+.alt-box{
+  border:1px dashed rgba(255,255,255,.18);
+  background:rgba(255,255,255,.04);
+  padding:12px; border-radius:12px; display:grid; gap:6px; font-size:14px;
 }
-.ticket-tier:hover {
-  transform: scale(1.01);
-  box-shadow: 0 0 12px rgba(0, 230, 118, 0.2);
-}
-.ticket-tier.selected {
-  background: #0f1a2f;
-  border: 1px solid #00E676;
-  color: #00E676;
-  font-weight: 600;
-}
+.alt-note{ font-size:12px; color:rgba(255,255,255,.72); margin-top:4px }
 
-/* enriched layout */
-.ticket-tier.rich {
-  flex-direction: column;
-  align-items: stretch;
-  gap: 6px;
+/* === Primary action === */
+.buy-button{
+  width:100%; margin-top:18px;
+  background:#00E676; color:#07130c; font-weight:800;
+  font-size:16px; padding:14px; border-radius:14px; border:none; cursor:pointer;
+  transition:transform .05s ease, opacity .2s ease, filter .2s ease;
 }
-.ticket-tier.rich.disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
-}
+.buy-button:active{ transform:translateY(1px) }
+.buy-button:disabled{ opacity:.6; filter:saturate(.8); cursor:not-allowed }
 
-/* top row */
-.tier-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  width: 100%;
-}
-.tier-name { font-weight: 600; }
-.tier-price { font-variant-numeric: tabular-nums; }
+/* Helper text */
+.pay-hint{ margin-top:8px; font-size:12px; color:rgba(255,255,255,.7) }
 
-/* description as bullets */
-.tier-desc {
-  margin: 6px 0 0 0;
-  padding-left: 18px;
-  opacity: 0.9;
+/* === Responsive tweaks === */
+@media (max-width:480px){
+  .popup-modal{ padding:20px; max-width:94vw }
+  .tab{ flex:1 0 calc(33.33% - 7px); text-align:center; padding:10px 8px; font-size:14px }
+  .method-tabs{ gap:8px }
+  .ticket-tier{ padding:14px }
+  .tier-name{ font-size:15px }
+  .tier-price{ font-size:15px }
 }
-.tier-desc li {
-  margin: 2px 0;
-  line-height: 1.2;
-}
-
-/* meta chips */
-.tier-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 8px;
-}
-.chip {
-  font-size: 12px;
-  padding: 4px 8px;
-  border-radius: 999px;
-  background: rgba(255,255,255,0.1);
-}
-.chip.warn { background: rgba(255,165,0,0.22); }  /* orange */
-.chip.light { background: rgba(255,255,255,0.06); }
-
-/* qty + pay */
-.ticket-quantity {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-top: 20px;
-}
-.ticket-quantity input {
-  width: 60px;
-  padding: 8px;
-  border-radius: 8px;
-  background: #1b1b2c;
-  border: 1px solid #444;
-  color: white;
-  text-align: center;
-}
-
-.buy-button {
-  width: 100%;
-  margin-top: 24px;
-  background: #00E676;
-  color: black;
-  font-weight: bold;
-  font-size: 16px;
-  padding: 14px;
-  border-radius: 12px;
-  border: none;
-  cursor: pointer;
-}
-.buy-button:disabled {
-  cursor: not-allowed;
-  filter: saturate(0.3) brightness(0.8);
-}
-
-.pay-buttons { margin-top: 16px; display: grid; gap: 10px; }
-.alt-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
-.btn-alt { padding: 10px 12px; border-radius: 10px; background: #1f2937; color: #fff; border: 1px solid #374151; }
-.btn-alt:disabled { opacity: .6; cursor: not-allowed; }
-
-/* container around payment actions */
-.pay-buttons {
-  margin-top: 16px;
-}
-
-/* grid for manual method buttons */
-.alt-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 8px;
-  margin-top: 10px;
-}
-
-/* main card button (you likely already have .buy-button) */
-.buy-button {
-  width: 100%;
-  padding: 12px 14px;
-  border-radius: 12px;
-  font-weight: 600;
-  border: none;
-  cursor: pointer;
-  background: #1fd66e;
-  color: #0b1b12;
-  transition: transform .05s ease, opacity .2s ease, filter .2s ease;
-}
-.buy-button:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-  filter: saturate(0.8);
-}
-.buy-button:active { transform: translateY(1px); }
-
-/* alt method buttons */
-.btn-alt {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  height: 40px;
-  padding: 0 10px;
-  border-radius: 10px;
-  border: 1px solid rgba(255,255,255,.14);
-  background: rgba(255,255,255,.06);
-  color: #eaf6ee;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background .2s ease, border-color .2s ease, transform .05s ease, opacity .2s ease;
-}
-.btn-alt:hover { background: rgba(255,255,255,.10); }
-.btn-alt:active { transform: translateY(1px); }
-.btn-alt:disabled {
-  opacity: .55;
-  cursor: not-allowed;
-}
-
-/* small helper text under buttons */
-.pay-hint {
-  margin-top: 8px;
-  font-size: 12px;
-  color: rgba(255,255,255,.7);
-}
-
-@media (max-width: 420px) {
-  .alt-grid {
-    grid-template-columns: 1fr 1fr;
-  }
+@media (max-width:360px){
+  .tab{ flex:1 0 calc(50% - 6px) }           /* wrap into 2 columns on very small screens */
 }
