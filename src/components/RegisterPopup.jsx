@@ -4,8 +4,8 @@ import './RegisterPopup.css'
 
 const API = 'https://backendevent-etce.onrender.com'
 
-// ⬇️ NEW: hard fallback so Pago Móvil converts even when no rate is provided
-const FALLBACK_VES_RATE = 179.2   // change this whenever you need
+// Hard fallback so Pago Móvil converts even when no rate is provided
+const FALLBACK_VES_RATE = 179.2
 const ENV_VES_RATE = Number(import.meta?.env?.VITE_VES_PER_USD || 0)
 const LS_VES_RATE  = Number(localStorage.getItem('ves_rate') || 0)
 
@@ -48,10 +48,30 @@ export default function RegisterPopup({
 
   const token = useAuthToken()
 
-  // === Currency / formatting
-  const useVES = method === 'pagoMovil'
+  // ===== Detect Venezuela -> hide Card =====
+  const isVenezuela = useMemo(() => {
+    const country  = String(payments?.country || payments?.pagoMovil?.country || '').toLowerCase()
+    const currency = String(payments?.currency || '').toUpperCase()
+    const pmEnabled = !!payments?.pagoMovil?.enabled
+    return country === 'venezuela' || currency === 'VES' || pmEnabled
+  }, [payments])
 
-  // ⬇️ if nothing comes from backend/env/LS/parent, we fall back to FALLBACK_VES_RATE
+  const showZelle = !!payments?.zelle?.enabled
+  const showPM    = !!payments?.pagoMovil?.enabled
+  const showCash  = !!payments?.cash?.enabled
+  const showCard  = !isVenezuela
+
+  // If Card is hidden but selected, auto-switch to another available method
+  useEffect(() => {
+    if (!showCard && method === 'card') {
+      if (showPM) setMethod('pagoMovil')
+      else if (showZelle) setMethod('zelle')
+      else if (showCash) setMethod('cash')
+    }
+  }, [showCard, showPM, showZelle, showCash, method])
+
+  // ===== Currency / formatting
+  const useVES = method === 'pagoMovil'
   const incomingRate =
     (fee && Number(fee.fxVesPerUsd)) ||
     (payments?.pagoMovil && Number(payments.pagoMovil.rate)) ||
@@ -88,7 +108,7 @@ export default function RegisterPopup({
          .filter(Boolean)
     )]
 
-  // === Availability helpers (unchanged)
+  // ===== Availability helpers
   const isSoldOut = t => Number(t?.availableQuantity ?? 0) <= 0
   const hasNotStarted = (t, now) => (t?.startTime ? now < new Date(t.startTime) : false)
   const hasEnded = (t, now) => (t?.endTime ? now > new Date(t.endTime) : false)
@@ -148,10 +168,6 @@ export default function RegisterPopup({
   const canPay =
     !!selectedTierId && quantity >= 1 && quantity <= maxQty && !selectedDisabled && !submitting
 
-  const showZelle = !!payments?.zelle?.enabled
-  const showPM    = !!payments?.pagoMovil?.enabled
-  const showCash  = !!payments?.cash?.enabled
-
   const methodPretty =
     method === 'pagoMovil' ? 'Pago Móvil'
     : method === 'zelle'   ? 'Zelle'
@@ -160,15 +176,13 @@ export default function RegisterPopup({
 
   const handleConfirm = () => { if (canPay) onPay?.(method) }
 
-  // === Fee quote fetch (same)
+  // ===== Fee quote fetch
   useEffect(() => {
     setFeeHadError(false)
-
     if (!eventId || !selectedTierId || quantity < 1) {
       setFee(null); setFeeLoading(false)
       return
     }
-
     let cancelled = false
     const controller = new AbortController()
 
@@ -182,13 +196,11 @@ export default function RegisterPopup({
           paymentMethod: method,
         })
         const url = `${API}/api/tickets/quote?${params.toString()}`
-
         const headers = token ? { Authorization: `Bearer ${token}` } : undefined
         let res = await fetch(url, { method: 'GET', headers, signal: controller.signal })
         if (res.status === 401 && headers) {
           res = await fetch(url, { method: 'GET', signal: controller.signal })
         }
-
         if (!res.ok) throw new Error(`fee ${res.status}`)
         const data = await res.json()
         if (!cancelled) setFee(data || null)
@@ -198,12 +210,11 @@ export default function RegisterPopup({
         if (!cancelled) setFeeLoading(false)
       }
     }
-
     fetchFee()
     return () => { cancelled = true; controller.abort() }
   }, [eventId, selectedTierId, quantity, method, token])
 
-  // === Fee rows (now convert with fallback rate)
+  // ===== Fee rows
   const feeRows = useMemo(() => {
     const rows = []
     const hasLive = !!fee && typeof fee.totalCents === 'number'
@@ -211,8 +222,8 @@ export default function RegisterPopup({
 
     if (hasLive) {
       const qtyText = selectedTier ? `${selectedTier.name} ×${quantity}` : 'Subtotal'
-      if (typeof fee.subtotalCents     === 'number') rows.push({ label: qtyText,              value: fmtCents(fee.subtotalCents),     strong: false })
-      if (typeof fee.serviceFeeCents   === 'number' && fee.serviceFeeCents   > 0) rows.push({ label: 'Service fee', value: fmtCents(fee.serviceFeeCents),   strong: false })
+      if (typeof fee.subtotalCents     === 'number') rows.push({ label: qtyText, value: fmtCents(fee.subtotalCents), strong: false })
+      if (typeof fee.serviceFeeCents   === 'number' && fee.serviceFeeCents   > 0) rows.push({ label: 'Service fee', value: fmtCents(fee.serviceFeeCents), strong: false })
       if (method === 'card' && typeof fee.stripeFeeCents === 'number' && fee.stripeFeeCents > 0) {
         rows.push({ label: 'Stripe fee', value: fmtCents(fee.stripeFeeCents), strong: false })
       }
@@ -309,32 +320,48 @@ export default function RegisterPopup({
 
         {/* Method tabs */}
         <div className="method-tabs">
-          <button className={`tab ${method==='card' ? 'active' : ''}`} onClick={() => setMethod('card')} disabled={!canPay && method!=='card'}>Card</button>
-          {showPM    && <button className={`tab ${method==='pagoMovil' ? 'active' : ''}`} onClick={() => setMethod('pagoMovil')} disabled={!canPay && method!=='pagoMovil'}>Pago Móvil</button>}
-          {showZelle && <button className={`tab ${method==='zelle' ? 'active' : ''}`} onClick={() => setMethod('zelle')} disabled={!canPay && method!=='zelle'}>Zelle</button>}
-          {showCash  && <button className={`tab ${method==='cash' ? 'active' : ''}`}  onClick={() => setMethod('cash')}  disabled={!canPay && method!=='cash'}>Cash</button>}
+          {showCard && (
+            <button className={`tab ${method==='card' ? 'active' : ''}`} onClick={() => setMethod('card')} disabled={!canPay && method!=='card'}>
+              Card
+            </button>
+          )}
+          {showPM && (
+            <button className={`tab ${method==='pagoMovil' ? 'active' : ''}`} onClick={() => setMethod('pagoMovil')} disabled={!canPay && method!=='pagoMovil'}>
+              Pago Móvil
+            </button>
+          )}
+          {showZelle && (
+            <button className={`tab ${method==='zelle' ? 'active' : ''}`} onClick={() => setMethod('zelle')} disabled={!canPay && method!=='zelle'}>
+              Zelle
+            </button>
+          )}
+          {showCash && (
+            <button className={`tab ${method==='cash' ? 'active' : ''}`} onClick={() => setMethod('cash')} disabled={!canPay && method!=='cash'}>
+              Cash
+            </button>
+          )}
         </div>
 
         {method !== 'card' && (
           <div className="alt-details">
             {method === 'pagoMovil' && showPM && (
               <div className="alt-box">
-                {payments.pagoMovil.phone && <div>📱 {payments.pagoMovil.phone}</div>}
-                {payments.pagoMovil.ci    && <div>🪪 CI: {payments.pagoMovil.ci}</div>}
-                {payments.pagoMovil.bank  && <div>🏦 {payments.pagoMovil.bank}</div>}
+                {payments?.pagoMovil?.phone && <div>📱 {payments.pagoMovil.phone}</div>}
+                {payments?.pagoMovil?.ci    && <div>🪪 CI: {payments.pagoMovil.ci}</div>}
+                {payments?.pagoMovil?.bank  && <div>🏦 {payments.pagoMovil.bank}</div>}
                 <div className="alt-note">After paying via Pago Móvil, press <strong>Pay</strong> to notify the organizer.</div>
               </div>
             )}
             {method === 'zelle' && showZelle && (
               <div className="alt-box">
-                {payments.zelle.email && <div>📧 {payments.zelle.email}</div>}
-                {payments.zelle.phone && <div>📞 {payments.zelle.phone}</div>}
+                {payments?.zelle?.email && <div>📧 {payments.zelle.email}</div>}
+                {payments?.zelle?.phone && <div>📞 {payments.zelle.phone}</div>}
                 <div className="alt-note">After sending your Zelle payment, press <strong>Pay</strong> to notify the organizer.</div>
               </div>
             )}
             {method === 'cash' && showCash && (
               <div className="alt-box">
-                {payments.cash.note && <div>📝 {payments.cash.note}</div>}
+                {payments?.cash?.note && <div>📝 {payments.cash.note}</div>}
                 <div className="alt-note">Press <strong>Pay</strong> to notify the organizer that you’ll pay in cash.</div>
               </div>
             )}
