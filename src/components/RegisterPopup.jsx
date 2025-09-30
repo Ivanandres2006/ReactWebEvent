@@ -14,17 +14,18 @@ export default function RegisterPopup({
   onQuantityChange,
   onPay,                            // onPay('card'|'zelle'|'pagoMovil'|'cash')
 }) {
+  // currently selected method tab (does NOT trigger payment)
   const [method, setMethod] = useState('card')
 
   const fmtPrice = (n) => `$${Number(n || 0).toFixed(2)}`
-  const splitDescription = (txt) => {
-    if (!txt) return []
-    return [...new Set(
-      txt.split(/[\n•;]| - |\u2022/g)
-         .map(s => s.replace(/^[-•\u2022]\s*/, '').trim())
-         .filter(Boolean)
-    )]
-  }
+  const splitDescription = (txt) =>
+    !txt ? [] :
+      [...new Set(
+        txt.split(/[\n•;]| - |\u2022/g)
+          .map(s => s.replace(/^[-•\u2022]\s*/, '').trim())
+          .filter(Boolean)
+      )]
+
   const isStartLocked = (t) => {
     const force = !!t?.forceOpen
     if (force) return false
@@ -60,6 +61,16 @@ export default function RegisterPopup({
   const showZelle = !!payments?.zelle?.enabled
   const showPM   = !!payments?.pagoMovil?.enabled
   const showCash = !!payments?.cash?.enabled
+
+  const methodPretty =
+    method === 'pagoMovil' ? 'Pago Móvil' :
+    method === 'zelle' ? 'Zelle' :
+    method === 'cash' ? 'Cash' : 'card'
+
+  const handleConfirm = () => {
+    if (!canPay) return
+    onPay?.(method)         // <- fire only when user hits the bottom Pay button
+  }
 
   return (
     <div className="popup-overlay" onClick={onClose}>
@@ -122,73 +133,100 @@ export default function RegisterPopup({
           />
         </div>
 
-        {/* Primary card button */}
-        <button
-          className="buy-button"
-          disabled={!canPay}
-          onClick={() => onPay?.('card')}
-          style={submitting ? { pointerEvents: 'none', opacity: 0.6 } : {}}
-        >
-          {submitting ? 'Processing…' : 'Pay with card'}
-        </button>
+        {/* Payment method selector (tab-like) */}
+        <div className="method-tabs">
+          <button
+            className={`tab ${method==='card' ? 'active' : ''}`}
+            onClick={() => setMethod('card')}
+            disabled={!canPay && method!=='card'}
+          >
+            Card
+          </button>
 
-        {/* Alternative methods (only enabled ones) */}
-        {(showZelle || showPM || showCash) && (
-          <>
-            <div className="alt-grid">
-              {showPM && (
-                <button className={`btn-alt ${method==='pagoMovil' ? 'active' : ''}`}
-                        disabled={!canPay}
-                        onClick={() => { setMethod('pagoMovil'); onPay?.('pagoMovil') }}>
-                  Pago Móvil
-                </button>
-              )}
-              {showZelle && (
-                <button className={`btn-alt ${method==='zelle' ? 'active' : ''}`}
-                        disabled={!canPay}
-                        onClick={() => { setMethod('zelle'); onPay?.('zelle') }}>
-                  Zelle
-                </button>
-              )}
-              {showCash && (
-                <button className={`btn-alt ${method==='cash' ? 'active' : ''}`}
-                        disabled={!canPay}
-                        onClick={() => { setMethod('cash'); onPay?.('cash') }}>
-                  Cash
-                </button>
-              )}
-            </div>
+          {showPM && (
+            <button
+              className={`tab ${method==='pagoMovil' ? 'active' : ''}`}
+              onClick={() => setMethod('pagoMovil')}
+              disabled={!canPay && method!=='pagoMovil'}
+            >
+              Pago Móvil
+            </button>
+          )}
 
-            {/* Inline details for the selected non-card method */}
-            <div className="alt-details">
-              {method === 'pagoMovil' && showPM && (
-                <div className="alt-box">
-                  {payments.pagoMovil.phone && <div>📱 {payments.pagoMovil.phone}</div>}
-                  {payments.pagoMovil.ci && <div>🪪 CI: {payments.pagoMovil.ci}</div>}
-                  {payments.pagoMovil.bank && <div>🏦 {payments.pagoMovil.bank}</div>}
-                  <div className="alt-note">After paying via Pago Móvil, we’ll notify the organizer.</div>
-                </div>
-              )}
-              {method === 'zelle' && showZelle && (
-                <div className="alt-box">
-                  {payments.zelle.email && <div>📧 {payments.zelle.email}</div>}
-                  {payments.zelle.phone && <div>📞 {payments.zelle.phone}</div>}
-                  <div className="alt-note">After sending your Zelle payment, we’ll notify the organizer.</div>
-                </div>
-              )}
-              {method === 'cash' && showCash && (
-                <div className="alt-box">
-                  {payments.cash.note && <div>📝 {payments.cash.note}</div>}
-                  <div className="alt-note">We’ll notify the organizer to expect your cash payment.</div>
-                </div>
-              )}
-            </div>
+          {showZelle && (
+            <button
+              className={`tab ${method==='zelle' ? 'active' : ''}`}
+              onClick={() => setMethod('zelle')}
+              disabled={!canPay && method!=='zelle'}
+            >
+              Zelle
+            </button>
+          )}
 
+          {showCash && (
+            <button
+              className={`tab ${method==='cash' ? 'active' : ''}`}
+              onClick={() => setMethod('cash')}
+              disabled={!canPay && method!=='cash'}
+            >
+              Cash
+            </button>
+          )}
+        </div>
+
+        {/* Method details */}
+        {method !== 'card' && (
+          <div className="alt-details">
+            {method === 'pagoMovil' && showPM && (
+              <div className="alt-box">
+                {payments.pagoMovil.phone && <div>📱 {payments.pagoMovil.phone}</div>}
+                {payments.pagoMovil.ci && <div>🪪 CI: {payments.pagoMovil.ci}</div>}
+                {payments.pagoMovil.bank && <div>🏦 {payments.pagoMovil.bank}</div>}
+                <div className="alt-note">
+                  After paying via Pago Móvil, press <strong>Pay</strong> to notify the organizer.
+                </div>
+              </div>
+            )}
+            {method === 'zelle' && showZelle && (
+              <div className="alt-box">
+                {payments.zelle.email && <div>📧 {payments.zelle.email}</div>}
+                {payments.zelle.phone && <div>📞 {payments.zelle.phone}</div>}
+                <div className="alt-note">
+                  After sending your Zelle payment, press <strong>Pay</strong> to notify the organizer.
+                </div>
+              </div>
+            )}
+            {method === 'cash' && showCash && (
+              <div className="alt-box">
+                {payments.cash.note && <div>📝 {payments.cash.note}</div>}
+                <div className="alt-note">
+                  Press <strong>Pay</strong> to notify the organizer that you’ll pay in cash.
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Final action: one button that triggers the selected method */}
+        <div className="pay-buttons">
+          <button
+            className="buy-button"
+            disabled={!canPay}
+            onClick={handleConfirm}
+            style={submitting ? { pointerEvents: 'none', opacity: 0.6 } : {}}
+          >
+            {submitting
+              ? (method === 'card' ? 'Processing…' : 'Sending…')
+              : (method === 'card' ? 'Pay with card' : `Pay (${methodPretty})`)
+            }
+          </button>
+
+          {method !== 'card' && (
             <p className="pay-hint">
               Manual methods notify the organizer. You’ll get your ticket by email after they confirm.
             </p>
-          </>
-        )}
+          )}
+        </div>
       </div>
     </div>
   )
