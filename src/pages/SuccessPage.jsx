@@ -47,6 +47,8 @@ export default function SuccessPage() {
   const [params, setParams] = useSearchParams()
   const eventId = Number(params.get('eventId'))
   const pendingParam = (params.get('pending') || '').toLowerCase() // 'pagomovil' | 'zelle' | 'cash' | ''
+  const sinceParam = params.get('since')
+  const since = sinceParam ? parseInt(sinceParam, 10) : null  // ms timestamp when manual request was sent
   const navigate = useNavigate()
 
   const token = localStorage.getItem('token') || ''
@@ -89,31 +91,39 @@ export default function SuccessPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [email, token, eventId])
 
-  // Poll while pending until tickets show up; then hide banner + clean URL (?pending=)
+  // While pending, poll until we see a ticket NEWER than the 'since' moment.
   useEffect(() => {
-    if (!pendingPretty) return
-    let stop = false
+    if (!showPendingBanner) return
+    let cancelled = false
+
+    const isNewerThanSince = (t) => {
+      if (!since) return true // fallback: any paid ticket will flip (legacy behaviour)
+      if (!t?.createdAt) return false
+      const created = new Date(t.createdAt).getTime()
+      // 10s tolerance in case of minor clock drift or server rounding
+      return Number.isFinite(created) && created >= (since - 10_000)
+    }
 
     const check = async () => {
       try {
         const forEvent = await fetchMine()
-        if (!stop && forEvent.length > 0) {
+        const hasNew = forEvent.some(isNewerThanSince)
+        if (!cancelled && hasNew) {
           setShowPendingBanner(false)
-          // remove ?pending from the URL without reload
           const next = new URLSearchParams(params)
           next.delete('pending')
+          next.delete('since')
           setParams(next, { replace: true })
         }
-      } catch {/* ignore individual poll errors */}
+      } catch { /* ignore individual poll errors */ }
     }
 
-    const id = setInterval(check, 5000)
-    // also run an immediate check
-    check()
+    const timer = setInterval(check, 5000)
+    check() // immediate
 
-    return () => { stop = true; clearInterval(id) }
+    return () => { cancelled = true; clearInterval(timer) }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pendingPretty, email, token, eventId])
+  }, [showPendingBanner, since, email, token, eventId])
 
   // If nothing to show and not pending, bounce back after 10s
   useEffect(() => {
@@ -137,7 +147,7 @@ export default function SuccessPage() {
             <div className="status-sub">
               {showPendingBanner ? (
                 <>
-                  We <strong>notified the organizer</strong> about your {pendingPretty} payment.
+                  We <strong>notified the organizer</strong> about your {pendingPretty || 'payment'}.
                   You’ll receive an email with your ticket as soon as they confirm it.
                 </>
               ) : (
