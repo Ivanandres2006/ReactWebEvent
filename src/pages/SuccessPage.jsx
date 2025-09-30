@@ -5,6 +5,7 @@ import './SuccessPage.css'
 
 const API = 'https://backendevent-etce.onrender.com'
 
+// fallback (legacy)
 function pickNewestBatch(eventTickets) {
   if (!Array.isArray(eventTickets) || eventTickets.length === 0) return []
   const groups = new Map()
@@ -35,9 +36,8 @@ function pickNewestBatch(eventTickets) {
   for (const [, arr] of groups) {
     const r = rank(arr)
     if (!best) best = { arr, ...r }
-    else {
-      if (r.createdMax > best.createdMax) best = { arr, ...r }
-      else if (r.createdMax === best.createdMax && r.idMax > best.idMax) best = { arr, ...r }
+    else if (r.createdMax > best.createdMax || (r.createdMax === best.createdMax && r.idMax > best.idMax)) {
+      best = { arr, ...r }
     }
   }
   return best?.arr ?? []
@@ -46,17 +46,17 @@ function pickNewestBatch(eventTickets) {
 export default function SuccessPage() {
   const [params, setParams] = useSearchParams()
   const eventId = Number(params.get('eventId'))
+  const pi = params.get('pi') || ''                  // ← Stripe PaymentIntentId from this checkout
   const pendingParam = (params.get('pending') || '').toLowerCase() // 'pagomovil' | 'zelle' | 'cash' | ''
   const sinceParam = params.get('since')
-  const since = sinceParam ? parseInt(sinceParam, 10) : null  // ms timestamp when manual request was sent
+  const since = sinceParam ? parseInt(sinceParam, 10) : null        // ms since manual request
   const navigate = useNavigate()
 
   const token = localStorage.getItem('token') || ''
   const email = localStorage.getItem('email') || ''
 
-  const [tickets, setTickets] = useState([])
-  const [latestTickets, setLatestTickets] = useState([])
-  const [showAll, setShowAll] = useState(false)
+  const [allForEvent, setAllForEvent] = useState([])
+  const [visible, setVisible] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [showPendingBanner, setShowPendingBanner] = useState(Boolean(pendingParam))
@@ -75,65 +75,81 @@ export default function SuccessPage() {
     if (!res.ok) throw new Error(`Tickets ${res.status}`)
     const all = await res.json()
     const forEvent = (all || []).filter(t => Number(t.eventId) === Number(eventId))
-    setTickets(forEvent)
-    setLatestTickets(pickNewestBatch(forEvent))
+    setAllForEvent(forEvent)
     return forEvent
+  }
+
+  const applyFilter = (forEvent) => {
+    // 1) Exact match by PI (card)
+    if (pi) {
+      return forEvent.filter(t => (t.paymentIntentId || '') === pi)
+    }
+    // 2) Newer-than moment (manual)
+    if (since) {
+      const cutoff = since - 10_000 // small tolerance
+      return forEvent.filter(t => {
+        const ts = t.createdAt ? new Date(t.createdAt).getTime() : NaN
+        return Number.isFinite(ts) && ts >= cutoff
+      })
+    }
+    // 3) Legacy (no identifiers): newest “batch”
+    return pickNewestBatch(forEvent)
   }
 
   // Initial load
   useEffect(() => {
     const run = async () => {
-      try { await fetchMine() }
-      catch { setError('Couldn’t load your ticket. Check your email for the receipt + QR.') }
-      finally { setLoading(false) }
+      try {
+        const forEvent = await fetchMine()
+        setVisible(applyFilter(forEvent))
+      } catch {
+        setError('Couldn’t load your ticket. Check your email for the receipt + QR.')
+      } finally {
+        setLoading(false)
+      }
     }
     run()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [email, token, eventId])
+  }, [email, token, eventId, pi, since])
 
-  // While pending, poll until we see a ticket NEWER than the 'since' moment.
+  // Poll until our *specific* tickets exist
   useEffect(() => {
-    if (!showPendingBanner) return
-    let cancelled = false
+    // We poll when:
+    // - card flow with pi but none visible yet, or
+    // - manual flow pending with since but none visible yet
+    const shouldPoll = (pi && visible.length === 0) || (showPendingBanner && since && visible.length === 0)
+    if (!shouldPoll) return
 
-    const isNewerThanSince = (t) => {
-      if (!since) return true // fallback: any paid ticket will flip (legacy behaviour)
-      if (!t?.createdAt) return false
-      const created = new Date(t.createdAt).getTime()
-      // 10s tolerance in case of minor clock drift or server rounding
-      return Number.isFinite(created) && created >= (since - 10_000)
-    }
-
-    const check = async () => {
+    let stop = false
+    const tick = async () => {
       try {
         const forEvent = await fetchMine()
-        const hasNew = forEvent.some(isNewerThanSince)
-        if (!cancelled && hasNew) {
-          setShowPendingBanner(false)
-          const next = new URLSearchParams(params)
-          next.delete('pending')
-          next.delete('since')
-          setParams(next, { replace: true })
+        const filtered = applyFilter(forEvent)
+        if (!stop && filtered.length > 0) {
+          setVisible(filtered)
+          if (showPendingBanner) {
+            setShowPendingBanner(false)
+            const next = new URLSearchParams(params)
+            next.delete('pending'); next.delete('since'); next.delete('pi')
+            setParams(next, { replace: true })
+          }
         }
-      } catch { /* ignore individual poll errors */ }
+      } catch {/* ignore */}
     }
 
-    const timer = setInterval(check, 5000)
-    check() // immediate
-
-    return () => { cancelled = true; clearInterval(timer) }
+    const id = setInterval(tick, 5000)
+    tick()
+    return () => { stop = true; clearInterval(id) }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showPendingBanner, since, email, token, eventId])
+  }, [pi, since, showPendingBanner, visible.length])
 
   // If nothing to show and not pending, bounce back after 10s
   useEffect(() => {
-    const list = showAll ? tickets : latestTickets
-    if (showPendingBanner || loading || error || (list && list.length)) return
+    if (showPendingBanner || loading || error) return
+    if (visible.length > 0) return
     const t = setTimeout(() => navigate(`/events/${eventId}`), 10000)
     return () => clearTimeout(t)
-  }, [showPendingBanner, loading, error, tickets, latestTickets, showAll, eventId, navigate])
-
-  const visible = showAll ? tickets : latestTickets
+  }, [showPendingBanner, loading, error, visible.length, eventId, navigate])
 
   return (
     <div className="success-page">
@@ -142,7 +158,7 @@ export default function SuccessPage() {
           <span className="status-dot" />
           <div className="status-text">
             <div className="status-strong">
-              {showPendingBanner ? 'Payment request sent' : 'Payment successful'}
+              {showPendingBanner ? 'Payment request sent' : (visible.length > 0 ? 'Payment successful' : 'Finalizing payment…')}
             </div>
             <div className="status-sub">
               {showPendingBanner ? (
@@ -151,7 +167,9 @@ export default function SuccessPage() {
                   You’ll receive an email with your ticket as soon as they confirm it.
                 </>
               ) : (
-                <>Confirmation sent to <span className="status-email">{email || 'your email'}</span></>
+                visible.length > 0
+                  ? <>Confirmation sent to <span className="status-email">{email || 'your email'}</span></>
+                  : <>We’re checking for your ticket…</>
               )}
             </div>
           </div>
@@ -177,7 +195,7 @@ export default function SuccessPage() {
             <p className="hint">
               {showPendingBanner
                 ? 'Your ticket will appear here after the organizer confirms your payment.'
-                : 'We couldn’t display your ticket here, but it’s in your email.'}
+                : 'We couldn’t display your ticket here yet.'}
             </p>
           )}
 
@@ -186,13 +204,7 @@ export default function SuccessPage() {
           ))}
         </div>
 
-        {tickets.length > latestTickets.length && (
-          <div className="toggle-all">
-            <button className="btn btn-ghost" onClick={() => setShowAll(v => !v)}>
-              {showAll ? 'Show only newest' : `Show all (${tickets.length})`}
-            </button>
-          </div>
-        )}
+        {/* 🔒 No "Show all" — we only ever show the current checkout’s tickets */}
       </div>
     </div>
   )
