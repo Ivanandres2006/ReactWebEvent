@@ -24,10 +24,7 @@ export default function AuthModal({ onClose }) {
     try {
       const url = isLogin ? `${API}/auth/login` : `${API}/auth/register`
       const payload = isLogin
-        ? {
-            identifier: form.emailOrUsername, // backend expects identifier
-            password: form.password,
-          }
+        ? { identifier: form.emailOrUsername, password: form.password }
         : {
             firstName: form.firstName,
             lastName: form.lastName,
@@ -52,7 +49,6 @@ export default function AuthModal({ onClose }) {
       }
 
       if (isLogin) {
-        // accept a variety of field names just in case
         const access = data.accessToken || data.token || data.jwt || ''
         if (!access) {
           alert('Login succeeded but no access token was returned.')
@@ -61,16 +57,14 @@ export default function AuthModal({ onClose }) {
         }
         localStorage.setItem('token', access)
         if (data.refreshToken) localStorage.setItem('refreshToken', data.refreshToken)
-        // 🔔 notify app pieces listening for login
-        window.dispatchEvent(new Event('auth:login'))
+        window.dispatchEvent(new Event('auth:login')) // notify others
         setLoading(false)
         onClose()
       } else {
-        // go to verify step
         setLoading(false)
         setStep('verify')
       }
-    } catch (err) {
+    } catch {
       setLoading(false)
       alert('Network error. Try again.')
     }
@@ -83,10 +77,7 @@ export default function AuthModal({ onClose }) {
       const res = await fetch(`${API}/auth/verify`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email: form.emailOrUsername,
-          code: verificationCode,
-        }),
+        body: JSON.stringify({ email: form.emailOrUsername, code: verificationCode }),
       })
       const data = await res.json()
       if (!res.ok) {
@@ -96,7 +87,6 @@ export default function AuthModal({ onClose }) {
       }
       localStorage.setItem('token', data.accessToken)
       if (data.refreshToken) localStorage.setItem('refreshToken', data.refreshToken)
-      // 🔔 let listeners refresh their token state
       window.dispatchEvent(new Event('auth:login'))
       setLoading(false)
       onClose()
@@ -115,46 +105,18 @@ export default function AuthModal({ onClose }) {
             <form onSubmit={handleAuthSubmit}>
               {!isLogin && (
                 <>
-                  <input
-                    type="text"
-                    placeholder="First Name"
-                    value={form.firstName}
-                    onChange={e => setForm({ ...form, firstName: e.target.value })}
-                    required
-                  />
-                  <input
-                    type="text"
-                    placeholder="Last Name"
-                    value={form.lastName}
-                    onChange={e => setForm({ ...form, lastName: e.target.value })}
-                    required
-                  />
-                  <input
-                    type="text"
-                    placeholder="Username"
-                    value={form.username}
-                    onChange={e => setForm({ ...form, username: e.target.value })}
-                    required
-                  />
+                  <input type="text" placeholder="First Name" value={form.firstName}
+                    onChange={e => setForm({ ...form, firstName: e.target.value })} required />
+                  <input type="text" placeholder="Last Name" value={form.lastName}
+                    onChange={e => setForm({ ...form, lastName: e.target.value })} required />
+                  <input type="text" placeholder="Username" value={form.username}
+                    onChange={e => setForm({ ...form, username: e.target.value })} required />
                 </>
               )}
-
-              <input
-                type="text"
-                placeholder="Email or Username"
-                value={form.emailOrUsername}
-                onChange={e => setForm({ ...form, emailOrUsername: e.target.value })}
-                required
-              />
-
-              <input
-                type="password"
-                placeholder="Password"
-                value={form.password}
-                onChange={e => setForm({ ...form, password: e.target.value })}
-                required
-              />
-
+              <input type="text" placeholder="Email or Username" value={form.emailOrUsername}
+                onChange={e => setForm({ ...form, emailOrUsername: e.target.value })} required />
+              <input type="password" placeholder="Password" value={form.password}
+                onChange={e => setForm({ ...form, password: e.target.value })} required />
               <button type="submit" disabled={loading}>
                 {loading ? 'Loading...' : isLogin ? 'Login' : 'Sign Up'}
               </button>
@@ -174,14 +136,8 @@ export default function AuthModal({ onClose }) {
             <h2>Verify Your Email</h2>
             <p className="subtext">We’ve sent a 6-digit code to <strong>{form.emailOrUsername}</strong></p>
             <form onSubmit={handleVerifySubmit}>
-              <input
-                type="text"
-                maxLength="6"
-                placeholder="Enter verification code"
-                value={verificationCode}
-                onChange={e => setVerificationCode(e.target.value)}
-                required
-              />
+              <input type="text" maxLength="6" placeholder="Enter verification code"
+                value={verificationCode} onChange={e => setVerificationCode(e.target.value)} required />
               <button type="submit" disabled={loading}>
                 {loading ? 'Verifying...' : 'Verify'}
               </button>
