@@ -213,7 +213,6 @@ export default function RegisterPopup({
       const qtyText = selectedTier ? `${selectedTier.name} ×${quantity}` : 'Subtotal'
       if (typeof fee.subtotalCents     === 'number') rows.push({ label: qtyText,              value: fmtCents(fee.subtotalCents),     strong: false })
       if (typeof fee.serviceFeeCents   === 'number' && fee.serviceFeeCents   > 0) rows.push({ label: 'Service fee', value: fmtCents(fee.serviceFeeCents),   strong: false })
-      if (typeof fee.platformFeeCents  === 'number' && fee.platformFeeCents  > 0) rows.push({ label: 'Platform fee', value: fmtCents(fee.platformFeeCents), strong: false })
       if (method === 'card' && typeof fee.stripeFeeCents === 'number' && fee.stripeFeeCents > 0) {
         rows.push({ label: 'Stripe fee', value: fmtCents(fee.stripeFeeCents), strong: false })
       }
