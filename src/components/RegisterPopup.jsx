@@ -4,7 +4,8 @@ import './RegisterPopup.css'
 
 const API = 'https://backendevent-etce.onrender.com'
 
-// Optional: fallback sources so Pago Móvil can show Bs. even without backend
+// ⬇️ NEW: hard fallback so Pago Móvil converts even when no rate is provided
+const FALLBACK_VES_RATE = 179.2   // change this whenever you need
 const ENV_VES_RATE = Number(import.meta?.env?.VITE_VES_PER_USD || 0)
 const LS_VES_RATE  = Number(localStorage.getItem('ves_rate') || 0)
 
@@ -41,24 +42,21 @@ export default function RegisterPopup({
 }) {
   const [method, setMethod] = useState('card')
 
-  // --- Fee state
   const [fee, setFee] = useState(null)
   const [feeLoading, setFeeLoading] = useState(false)
   const [feeHadError, setFeeHadError] = useState(false)
 
   const token = useAuthToken()
 
-  // ===== Currency / formatting =====
-  // If Pago Móvil is selected, we always display Bs (VES), regardless of having a rate.
+  // === Currency / formatting
   const useVES = method === 'pagoMovil'
 
-  // Try to get a USD->VES rate from several sources (optional). 0 => “no rate, just label Bs.”
+  // ⬇️ if nothing comes from backend/env/LS/parent, we fall back to FALLBACK_VES_RATE
   const incomingRate =
     (fee && Number(fee.fxVesPerUsd)) ||
     (payments?.pagoMovil && Number(payments.pagoMovil.rate)) ||
-    ENV_VES_RATE || LS_VES_RATE || 0
+    ENV_VES_RATE || LS_VES_RATE || FALLBACK_VES_RATE
 
-  // If server already quotes in VES, treat as “rate 1”; otherwise use incomingRate (may be 0)
   const vesRate = useMemo(() => {
     if (fee?.currency?.toUpperCase?.() === 'VES') return 1
     return Math.max(0, Number(incomingRate) || 0)
@@ -69,18 +67,13 @@ export default function RegisterPopup({
   const fmtVES = (x) =>
     `Bs. ${Number(x || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 
-  // Convert “USD cents” to display string
   const fmtCents = (cents) => {
     const baseUSD = Number(cents || 0) / 100
-    // If backend says values are VES already
     if (fee?.currency?.toUpperCase?.() === 'VES') return fmtVES(baseUSD)
-    // Pago Móvil -> always show Bs.; convert if we have a rate; otherwise same numeric labeled Bs.
     if (useVES) return fmtVES(vesRate > 0 ? baseUSD * vesRate : baseUSD)
-    // Other methods -> USD
     return fmtUSD(baseUSD)
   }
 
-  // Format a USD unit price (tier.price) using the same rules
   const fmtUnitPrice = (usdNumber) => {
     const usd = Number(usdNumber || 0)
     if (fee?.currency?.toUpperCase?.() === 'VES') return fmtVES(usd)
@@ -95,7 +88,7 @@ export default function RegisterPopup({
          .filter(Boolean)
     )]
 
-  // ===== Availability / selection
+  // === Availability helpers (unchanged)
   const isSoldOut = t => Number(t?.availableQuantity ?? 0) <= 0
   const hasNotStarted = (t, now) => (t?.startTime ? now < new Date(t.startTime) : false)
   const hasEnded = (t, now) => (t?.endTime ? now > new Date(t.endTime) : false)
@@ -137,7 +130,6 @@ export default function RegisterPopup({
     [tiers, selectedTierId]
   )
 
-  // Quantity clamp
   const maxQty = useMemo(() => {
     const tierLeft = Number(selectedTier?.availableQuantity ?? 10)
     return Math.max(1, Math.min(10, tierLeft))
@@ -168,7 +160,7 @@ export default function RegisterPopup({
 
   const handleConfirm = () => { if (canPay) onPay?.(method) }
 
-  // === Fee quote fetch (works with or without login)
+  // === Fee quote fetch (same)
   useEffect(() => {
     setFeeHadError(false)
 
@@ -211,7 +203,7 @@ export default function RegisterPopup({
     return () => { cancelled = true; controller.abort() }
   }, [eventId, selectedTierId, quantity, method, token])
 
-  // Build rows (always Bs for Pago Móvil)
+  // === Fee rows (now convert with fallback rate)
   const feeRows = useMemo(() => {
     const rows = []
     const hasLive = !!fee && typeof fee.totalCents === 'number'
@@ -229,7 +221,6 @@ export default function RegisterPopup({
       return { rows, isEstimate: false }
     }
 
-    // Fallback: subtotal from tier price (no fees)
     const subtotalCents = Math.round(priceUSD * 100 * quantity)
     rows.push({ label: selectedTier ? `${selectedTier.name} ×${quantity}` : 'Subtotal', value: fmtCents(subtotalCents), strong: false })
     rows.push({ label: 'Total (est.)', value: fmtCents(subtotalCents), strong: true })
@@ -249,7 +240,9 @@ export default function RegisterPopup({
           tiers.slice().sort((a,b)=>(a.tierOrder??0)-(b.tierOrder??0)).map((tier)=>{
             const selected = selectedTierId === tier.id
             const unavailable = isUnavailable(tier)
-            const desc = splitDescription(tier.description)
+            const desc = (tier.description ? [...new Set(
+              tier.description.split(/[\n•;]| - |\u2022/g).map(s => s.replace(/^[-•\u2022]\s*/, '').trim()).filter(Boolean)
+            )] : [])
             return (
               <div
                 key={tier.id}
