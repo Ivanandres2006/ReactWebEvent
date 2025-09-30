@@ -105,7 +105,6 @@ export default function EventDetailPage() {
       setTiersLoading(true)
       setTiersErr(null)
 
-      // helpers
       const isSoldOut = (t) => Number(t?.availableQuantity ?? 0) <= 0
       const hasNotStarted = (t, now) => t?.startTime ? now < new Date(t.startTime) : false
       const hasEnded = (t, now) => t?.endTime ? now > new Date(t.endTime) : false
@@ -157,6 +156,17 @@ export default function EventDetailPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showPopup, id, token])
 
+  // ---- pull a VES-per-USD rate from the event (any of these field names will work)
+  const vesRate =
+    event?.vesRate ??
+    event?.ves_rate ??
+    event?.vesPerUsd ??
+    event?.ves_per_usd ??
+    event?.fxVesPerUsd ??
+    event?.exchangeRateVes ??
+    event?.exchange_rate_ves ??
+    null
+
   // Build dynamic payment options for the popup
   const payments = event ? {
     zelle: {
@@ -165,10 +175,14 @@ export default function EventDetailPage() {
       phone: event.zellePhone || '',
     },
     pagoMovil: {
-      enabled: (String(event.country || '').toLowerCase() === 'venezuela') && !!event.allowPagoMovil,
+      enabled:
+        (String(event.country || '').toLowerCase() === 'venezuela' || String(event.currency || '').toUpperCase() === 'VES')
+        && !!event.allowPagoMovil,
       phone: event.pagoMovilPhone || '',
       ci: event.pagoMovilCi || '',
       bank: event.pagoMovilBank || '',
+      // 👇 this makes RegisterPopup render prices/fees in Bolívares for Pago Móvil
+      rate: typeof vesRate === 'number' ? vesRate : undefined, // VES per 1 USD
     },
     cash: {
       enabled: !!event.allowCash,
@@ -208,13 +222,11 @@ export default function EventDetailPage() {
 
       const data = await res.json()
 
-      // free
       if (data.free === true || data.free === 'true') {
         window.location.href = `/#/success?eventId=${id}`
         return
       }
 
-      // manual methods
       if (data.manual === true) {
         setShowPopup(false)
         const methodLower = String(method || 'card').toLowerCase()
@@ -224,7 +236,6 @@ export default function EventDetailPage() {
         return
       }
 
-      // stripe card
       if (data.clientSecret) {
         setClientSecret(data.clientSecret)
         setShowPopup(false)
@@ -322,7 +333,6 @@ export default function EventDetailPage() {
         </div>
       </div>
 
-      {/* Footer */}
       <footer className="site-footer">
         <div className="footer-inner">
           <div className="brand">
