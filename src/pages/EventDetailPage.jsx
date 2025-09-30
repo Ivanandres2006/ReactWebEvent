@@ -209,14 +209,17 @@ export default function EventDetailPage() {
         return
       }
 
-      // manual methods
+      // manual methods → redirect with pending & since (to avoid showing old confirmed tickets)
       if (data.manual === true) {
         setShowPopup(false)
-        window.location.href = `/#/success?eventId=${id}&pending=${encodeURIComponent(method)}`
+        const methodLower = String(method || 'card').toLowerCase()
+        const since = Date.now()
+        window.location.href =
+          `/#/success?eventId=${id}&pending=${encodeURIComponent(methodLower)}&since=${since}`
         return
       }
 
-      // card path
+      // card path → open Stripe
       if (data.clientSecret) {
         setClientSecret(data.clientSecret)
         setShowPopup(false)
@@ -325,7 +328,7 @@ export default function EventDetailPage() {
           selectedTierId={selectedTierId}
           quantity={quantity}
           submitting={checkingOut}
-          payments={payments}
+          payments={payments}               
           onClose={() => {
             setShowPopup(false)
             setSelectedTierId(null)
@@ -354,7 +357,8 @@ export default function EventDetailPage() {
                     method: 'POST',
                     headers: token ? { Authorization: `Bearer ${token}` } : {},
                   })
-                  window.location.href = `/#/success?eventId=${id}`
+                  // 👉 include the PI in the redirect so SuccessPage shows only this checkout
+                  window.location.href = `/#/success?eventId=${id}&pi=${encodeURIComponent(paymentIntentId)}`
                 }}
               />
             </Elements>
