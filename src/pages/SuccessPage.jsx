@@ -83,7 +83,7 @@ export default function SuccessPage() {
   useEffect(() => {
     const list = showAll ? tickets : latestTickets
     if (pending || loading || error || (list && list.length)) return
-    const t = setTimeout(() => navigate(`/event/${eventId}`), 10000)
+    const t = setTimeout(() => navigate(`/events/${eventId}`), 10000)
     return () => clearTimeout(t)
   }, [pending, loading, error, tickets, latestTickets, showAll, eventId, navigate])
 
