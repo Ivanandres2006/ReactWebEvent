@@ -44,9 +44,9 @@ function pickNewestBatch(eventTickets) {
 }
 
 export default function SuccessPage() {
-  const [params] = useSearchParams()
+  const [params, setParams] = useSearchParams()
   const eventId = Number(params.get('eventId'))
-  const pending = (params.get('pending') || '').toLowerCase() // 'pagomovil' | 'zelle' | 'cash' | ''
+  const pendingParam = (params.get('pending') || '').toLowerCase() // 'pagomovil' | 'zelle' | 'cash' | ''
   const navigate = useNavigate()
 
   const token = localStorage.getItem('token') || ''
@@ -57,43 +57,73 @@ export default function SuccessPage() {
   const [showAll, setShowAll] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
-
-  useEffect(() => {
-    const run = async () => {
-      try {
-        if (!email) throw new Error('Missing email')
-        const res = await fetch(`${API}/api/tickets/my?email=${encodeURIComponent(email)}`, {
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
-        })
-        if (!res.ok) throw new Error(`Tickets ${res.status}`)
-        const all = await res.json()
-        const forEvent = (all || []).filter(t => Number(t.eventId) === Number(eventId))
-        setTickets(forEvent)
-        setLatestTickets(pickNewestBatch(forEvent))
-      } catch {
-        setError('Couldn’t load your ticket. Check your email for the receipt + QR.')
-      } finally {
-        setLoading(false)
-      }
-    }
-    run()
-  }, [email, token, eventId])
-
-  // If nothing to show, bounce back after 10s (only when not pending)
-  useEffect(() => {
-    const list = showAll ? tickets : latestTickets
-    if (pending || loading || error || (list && list.length)) return
-    const t = setTimeout(() => navigate(`/events/${eventId}`), 10000)
-    return () => clearTimeout(t)
-  }, [pending, loading, error, tickets, latestTickets, showAll, eventId, navigate])
-
-  const visible = showAll ? tickets : latestTickets
+  const [showPendingBanner, setShowPendingBanner] = useState(Boolean(pendingParam))
 
   const pendingPretty =
-    pending === 'pagomovil' ? 'Pago Móvil'
-    : pending === 'zelle' ? 'Zelle'
-    : pending === 'cash' ? 'Cash'
+    pendingParam === 'pagomovil' ? 'Pago Móvil'
+    : pendingParam === 'zelle' ? 'Zelle'
+    : pendingParam === 'cash' ? 'Cash'
     : ''
+
+  const fetchMine = async () => {
+    if (!email) throw new Error('Missing email')
+    const res = await fetch(`${API}/api/tickets/my?email=${encodeURIComponent(email)}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    })
+    if (!res.ok) throw new Error(`Tickets ${res.status}`)
+    const all = await res.json()
+    const forEvent = (all || []).filter(t => Number(t.eventId) === Number(eventId))
+    setTickets(forEvent)
+    setLatestTickets(pickNewestBatch(forEvent))
+    return forEvent
+  }
+
+  // Initial load
+  useEffect(() => {
+    const run = async () => {
+      try { await fetchMine() }
+      catch { setError('Couldn’t load your ticket. Check your email for the receipt + QR.') }
+      finally { setLoading(false) }
+    }
+    run()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [email, token, eventId])
+
+  // Poll while pending until tickets show up; then hide banner + clean URL (?pending=)
+  useEffect(() => {
+    if (!pendingPretty) return
+    let stop = false
+
+    const check = async () => {
+      try {
+        const forEvent = await fetchMine()
+        if (!stop && forEvent.length > 0) {
+          setShowPendingBanner(false)
+          // remove ?pending from the URL without reload
+          const next = new URLSearchParams(params)
+          next.delete('pending')
+          setParams(next, { replace: true })
+        }
+      } catch {/* ignore individual poll errors */}
+    }
+
+    const id = setInterval(check, 5000)
+    // also run an immediate check
+    check()
+
+    return () => { stop = true; clearInterval(id) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingPretty, email, token, eventId])
+
+  // If nothing to show and not pending, bounce back after 10s
+  useEffect(() => {
+    const list = showAll ? tickets : latestTickets
+    if (showPendingBanner || loading || error || (list && list.length)) return
+    const t = setTimeout(() => navigate(`/events/${eventId}`), 10000)
+    return () => clearTimeout(t)
+  }, [showPendingBanner, loading, error, tickets, latestTickets, showAll, eventId, navigate])
+
+  const visible = showAll ? tickets : latestTickets
 
   return (
     <div className="success-page">
@@ -102,10 +132,10 @@ export default function SuccessPage() {
           <span className="status-dot" />
           <div className="status-text">
             <div className="status-strong">
-              {pendingPretty ? 'Payment request sent' : 'Payment successful'}
+              {showPendingBanner ? 'Payment request sent' : 'Payment successful'}
             </div>
             <div className="status-sub">
-              {pendingPretty ? (
+              {showPendingBanner ? (
                 <>
                   We <strong>notified the organizer</strong> about your {pendingPretty} payment.
                   You’ll receive an email with your ticket as soon as they confirm it.
@@ -124,7 +154,7 @@ export default function SuccessPage() {
             >
               Open Gmail
             </a>
-            <Link className="btn btn-xs btn-accent" to={`/event/${eventId}`}>
+            <Link className="btn btn-xs btn-accent" to={`/events/${eventId}`}>
               Back to event
             </Link>
           </div>
@@ -135,7 +165,7 @@ export default function SuccessPage() {
           {error && <p className="hint hint-error">{error}</p>}
           {!loading && !error && visible.length === 0 && (
             <p className="hint">
-              {pendingPretty
+              {showPendingBanner
                 ? 'Your ticket will appear here after the organizer confirms your payment.'
                 : 'We couldn’t display your ticket here, but it’s in your email.'}
             </p>
