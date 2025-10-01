@@ -4,7 +4,7 @@ import { fetchWithAuth, getAccessToken } from '../lib/authClient'
 
 const API = 'https://backendevent-etce.onrender.com'
 
-// Hard fallback so Pago Móvil converts even when no rate is provided
+// Fallbacks so Pago Móvil converts even if no rate is available
 const FALLBACK_VES_RATE = 179.2
 const ENV_VES_RATE = Number(import.meta?.env?.VITE_VES_PER_USD || 0)
 const LS_VES_RATE  = Number(localStorage.getItem('ves_rate') || 0)
@@ -47,25 +47,37 @@ export default function RegisterPopup({
   const showCash  = !!payments?.cash?.enabled
   const showCard  = !isVenezuela
 
-  // Fetch BCV when Pago Móvil is active
+  // Fetch BCV when Pago Móvil is active and cache is stale (> 6h)
   useEffect(() => {
     if (method !== 'pagoMovil') return
-    let cancelled = false
 
+    const keyRate = 'ves_rate_bcv'
+    const keyTs   = 'ves_rate_bcv_ts'
+    const last    = Number(localStorage.getItem(keyRate) || 0)
+    const lastTs  = Number(localStorage.getItem(keyTs) || 0)
+    const SIX_HOURS_MS = 6 * 60 * 60 * 1000
+
+    if (last > 0 && (Date.now() - lastTs) < SIX_HOURS_MS) {
+      setBcvRate(last)
+      return
+    }
+
+    let cancelled = false
     ;(async () => {
       try {
         const res = await fetch(`${API}/api/fx/ves-per-usd`, { method: 'GET' })
-        if (!res.ok) return
+        if (!res.ok) return // gracefully keep fallbacks
         const json = await res.json()
         const rate = Number(json?.vesPerUsd || 0)
         if (!cancelled && Number.isFinite(rate) && rate > 0) {
           setBcvRate(rate)
-          localStorage.setItem('ves_rate_bcv', String(rate))
-          // keep legacy key too so old paths benefit
+          localStorage.setItem(keyRate, String(rate))
+          localStorage.setItem(keyTs, String(Date.now()))
+          // keep legacy key so old code paths benefit
           localStorage.setItem('ves_rate', String(rate))
         }
       } catch {
-        // ignore; we'll keep fallbacks
+        // ignore; fallbacks below cover us
       }
     })()
 
