@@ -26,7 +26,6 @@ export default function RegisterPopup({
   const [feeHadError, setFeeHadError] = useState(false)
 
   // ==== Live BCV state (preferred source after fee.fx) ====
-  // Start at 0 so we don't accidentally show stale cache that equals the fallback/env
   const [bcvRate, setBcvRate] = useState(0)
   const [bcvSource, setBcvSource] = useState('') // 'bcv' | 'cache' | ''
 
