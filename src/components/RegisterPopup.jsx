@@ -5,7 +5,7 @@ import { fetchWithAuth, getAccessToken } from '../lib/authClient'
 const API = 'https://backendevent-etce.onrender.com'
 
 // Fallbacks so we always render something even if everything fails
-const FALLBACK_VES_RATE = 179.2
+const FALLBACK_VES_RATE = 179.43
 const ENV_VES_RATE = Number(import.meta?.env?.VITE_VES_PER_USD || 0)
 const LS_VES_RATE  = Number(localStorage.getItem('ves_rate') || 0)
 
