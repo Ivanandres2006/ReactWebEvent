@@ -4,10 +4,15 @@ import { fetchWithAuth, getAccessToken } from '../lib/authClient'
 
 const API = 'https://backendevent-etce.onrender.com'
 
-// Fallbacks so Pago Móvil converts even if no rate is available
-const FALLBACK_VES_RATE = 179.43
+// Fallbacks so we always render something even if everything fails
+const FALLBACK_VES_RATE = 179.2
 const ENV_VES_RATE = Number(import.meta?.env?.VITE_VES_PER_USD || 0)
 const LS_VES_RATE  = Number(localStorage.getItem('ves_rate') || 0)
+
+// LocalStorage keys for the live BCV fetch
+const BCV_RATE_KEY = 'ves_rate_bcv'
+const BCV_TS_KEY   = 'ves_rate_bcv_ts'
+const BCV_TTL_MS   = 30 * 60 * 1000 // refresh every 30 minutes
 
 export default function RegisterPopup({
   eventId, tiers, loading=false, error=null,
@@ -20,13 +25,14 @@ export default function RegisterPopup({
   const [feeLoading, setFeeLoading] = useState(false)
   const [feeHadError, setFeeHadError] = useState(false)
 
-  // BCV rate (cached in localStorage)
+  // ==== Live BCV state (preferred source after fee.fx) ====
   const [bcvRate, setBcvRate] = useState(() => {
-    const cached = Number(localStorage.getItem('ves_rate_bcv') || 0)
+    const cached = Number(localStorage.getItem(BCV_RATE_KEY) || 0)
     return Number.isFinite(cached) && cached > 0 ? cached : 0
   })
+  const [bcvSource, setBcvSource] = useState('') // 'bcv' | 'cache' | ''
 
-  // re-read token when login happens in modal
+  // Re-read token when login happens in modal
   const [token, setToken] = useState(getAccessToken())
   useEffect(() => {
     const onAuth = () => setToken(getAccessToken())
@@ -47,42 +53,49 @@ export default function RegisterPopup({
   const showCash  = !!payments?.cash?.enabled
   const showCard  = !isVenezuela
 
-  // Fetch BCV when Pago Móvil is active and cache is stale (> 6h)
+  // ==== Fetch BCV on mount and refresh every 30 minutes (independent of tabs/method) ====
   useEffect(() => {
-    if (method !== 'pagoMovil') return
+    let cancelled = false
+    let intervalId
 
-    const keyRate = 'ves_rate_bcv'
-    const keyTs   = 'ves_rate_bcv_ts'
-    const last    = Number(localStorage.getItem(keyRate) || 0)
-    const lastTs  = Number(localStorage.getItem(keyTs) || 0)
-    const SIX_HOURS_MS = 6 * 60 * 60 * 1000
-
-    if (last > 0 && (Date.now() - lastTs) < SIX_HOURS_MS) {
-      setBcvRate(last)
-      return
+    const readCacheFresh = () => {
+      const cached = Number(localStorage.getItem(BCV_RATE_KEY) || 0)
+      const ts = Number(localStorage.getItem(BCV_TS_KEY) || 0)
+      const fresh = cached > 0 && Date.now() - ts < BCV_TTL_MS
+      if (fresh) {
+        setBcvRate(cached)
+        setBcvSource('cache')
+      }
+      return fresh
     }
 
-    let cancelled = false
-    ;(async () => {
+    const fetchLive = async () => {
       try {
-        const res = await fetch(`${API}/api/fx/ves-per-usd`, { method: 'GET' })
-        if (!res.ok) return // gracefully keep fallbacks
+        const res = await fetch(`${API}/api/fx/ves-per-usd`)
+        if (!res.ok) return
         const json = await res.json()
         const rate = Number(json?.vesPerUsd || 0)
         if (!cancelled && Number.isFinite(rate) && rate > 0) {
           setBcvRate(rate)
-          localStorage.setItem(keyRate, String(rate))
-          localStorage.setItem(keyTs, String(Date.now()))
-          // keep legacy key so old code paths benefit
+          setBcvSource('bcv')
+          localStorage.setItem(BCV_RATE_KEY, String(rate))
+          localStorage.setItem(BCV_TS_KEY, String(Date.now()))
+          // keep legacy key for old code-paths
           localStorage.setItem('ves_rate', String(rate))
         }
-      } catch {
-        // ignore; fallbacks below cover us
-      }
-    })()
+      } catch { /* ignore; we’ll show cached/env/fallback */ }
+    }
 
-    return () => { cancelled = true }
-  }, [method])
+    // Use fresh cache immediately; then try to refresh in background
+    const hadFresh = readCacheFresh()
+    if (!hadFresh) fetchLive()
+    intervalId = window.setInterval(fetchLive, BCV_TTL_MS)
+
+    return () => {
+      cancelled = true
+      if (intervalId) window.clearInterval(intervalId)
+    }
+  }, [])
 
   // If Card is hidden but selected, auto-switch to another available method
   useEffect(() => {
@@ -95,11 +108,21 @@ export default function RegisterPopup({
 
   // ===== Currency / formatting
   const useVES = method === 'pagoMovil'
-  const incomingRate =
-    (fee && Number(fee.fxVesPerUsd)) ||
-    (payments?.pagoMovil && Number(payments.pagoMovil.rate)) ||
-    (bcvRate && Number(bcvRate)) ||
-    ENV_VES_RATE || LS_VES_RATE || FALLBACK_VES_RATE
+
+  // Priority: fee.fx → liveBCV → organizer PM rate → env → ls → hard fallback
+  const incomingRate = useMemo(() => {
+    const fromFee = fee && Number(fee.fxVesPerUsd)
+    if (Number.isFinite(fromFee) && fromFee > 0) return fromFee
+
+    if (Number.isFinite(bcvRate) && bcvRate > 0) return bcvRate
+
+    const organizer = payments?.pagoMovil && Number(payments.pagoMovil.rate)
+    if (Number.isFinite(organizer) && organizer > 0) return organizer
+
+    if (ENV_VES_RATE > 0) return ENV_VES_RATE
+    if (LS_VES_RATE  > 0) return LS_VES_RATE
+    return FALLBACK_VES_RATE
+  }, [fee, bcvRate, payments])
 
   const vesRate = useMemo(() => {
     if (fee?.currency?.toUpperCase?.() === 'VES') return 1
@@ -178,7 +201,6 @@ export default function RegisterPopup({
     const tierLeft = Number(selectedTier?.availableQuantity ?? 10)
     return Math.max(1, Math.min(10, tierLeft))
   }, [selectedTier])
-
   useEffect(() => {
     if (quantity > maxQty) onQuantityChange(maxQty)
     else if (quantity < 1) onQuantityChange(1)
@@ -235,7 +257,6 @@ export default function RegisterPopup({
         if (!cancelled) setFeeLoading(false)
       }
     }
-
     fetchFee()
     return () => { cancelled = true; controller.abort() }
   }, [eventId, selectedTierId, quantity, method, token])
@@ -263,6 +284,7 @@ export default function RegisterPopup({
     return { rows, isEstimate: true }
   }, [fee, selectedTier, quantity, method, useVES, vesRate])
 
+  // Render
   return (
     <div className="popup-overlay" onClick={onClose}>
       <div className="popup-modal" onClick={(e) => e.stopPropagation()}>
@@ -338,7 +360,7 @@ export default function RegisterPopup({
                 )}
                 {method === 'pagoMovil' && (fee?.currency?.toUpperCase?.() !== 'VES') && vesRate > 0 && (
                   <div className="fee-hint">
-                    {bcvRate > 0
+                    {(bcvSource === 'bcv' || bcvSource === 'cache')
                       ? `BCV ${vesRate.toLocaleString(undefined,{ maximumFractionDigits: 6 })} Bs/USD`
                       : `Converted at ${vesRate} Bs/USD.`}
                   </div>
