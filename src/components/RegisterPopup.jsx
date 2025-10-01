@@ -20,6 +20,12 @@ export default function RegisterPopup({
   const [feeLoading, setFeeLoading] = useState(false)
   const [feeHadError, setFeeHadError] = useState(false)
 
+  const [bcvRate, setBcvRate] = useState(() => {
+    const cached = Number(localStorage.getItem('ves_rate_bcv') || 0)
+    return Number.isFinite(cached) && cached > 0 ? cached : 0
+  })
+  const [bcvTs, setBcvTs] = useState(localStorage.getItem('ves_rate_bcv_ts') || '')  
+
   // re-read token when login happens in modal
   const [token, setToken] = useState(getAccessToken())
   useEffect(() => {
@@ -41,6 +47,33 @@ export default function RegisterPopup({
   const showCash  = !!payments?.cash?.enabled
   const showCard  = !isVenezuela
 
+  useEffect(() => {
+    // Fetch only when Pago Móvil is relevant to avoid extra calls
+    if (method !== 'pagoMovil') return
+  
+    let cancelled = false
+    ;(async () => {
+      try {
+        const res = await fetch(`${API}/api/fx/ves-per-usd`, { method: 'GET' })
+        if (!res.ok) return
+        const json = await res.json()
+        const rate = Number(json?.vesPerUsd || 0)
+        const ts = String(json?.fetchedAt || '')
+        if (!cancelled && Number.isFinite(rate) && rate > 0) {
+          setBcvRate(rate)
+          setBcvTs(ts)
+          localStorage.setItem('ves_rate_bcv', String(rate))
+          localStorage.setItem('ves_rate_bcv_ts', ts)
+          // keep legacy key too so old paths benefit
+          localStorage.setItem('ves_rate', String(rate))
+        }
+      } catch {/* ignore */}
+    })()
+  
+    return () => { cancelled = true }
+  }, [method])
+  
+
   // If Card is hidden but selected, auto-switch to another available method
   useEffect(() => {
     if (!showCard && method === 'card') {
@@ -53,9 +86,10 @@ export default function RegisterPopup({
   // ===== Currency / formatting
   const useVES = method === 'pagoMovil'
   const incomingRate =
-    (fee && Number(fee.fxVesPerUsd)) ||
-    (payments?.pagoMovil && Number(payments.pagoMovil.rate)) ||
-    ENV_VES_RATE || LS_VES_RATE || FALLBACK_VES_RATE
+  (fee && Number(fee.fxVesPerUsd)) ||
+  (payments?.pagoMovil && Number(payments.pagoMovil.rate)) ||
+  (bcvRate && Number(bcvRate)) ||
+  ENV_VES_RATE || LS_VES_RATE || FALLBACK_VES_RATE
 
   const vesRate = useMemo(() => {
     if (fee?.currency?.toUpperCase?.() === 'VES') return 1
@@ -291,8 +325,13 @@ export default function RegisterPopup({
                   <div className="fee-hint">Showing estimate. Final fees will appear at checkout.</div>
                 )}
                 {method === 'pagoMovil' && (fee?.currency?.toUpperCase?.() !== 'VES') && vesRate > 0 && (
-                  <div className="fee-hint">Converted at {vesRate} Bs/USD.</div>
-                )}
+  <div className="fee-hint">
+    {bcvRate > 0
+      ? `BCV ${vesRate.toLocaleString(undefined,{maximumFractionDigits:6})} Bs/USD`
+      : `Converted at ${vesRate} Bs/USD.`}
+  </div>
+)}
+
               </>
             )}
           </div>
