@@ -12,7 +12,7 @@ const LS_VES_RATE  = Number(localStorage.getItem('ves_rate') || 0)
 // LocalStorage keys for the live BCV fetch
 const BCV_RATE_KEY = 'ves_rate_bcv'
 const BCV_TS_KEY   = 'ves_rate_bcv_ts'
-const BCV_TTL_MS   = 30 * 60 * 1000 // refresh every 30 minutes
+const BCV_TTL_MS   = 30 * 60 * 1000 // 30 minutes
 
 export default function RegisterPopup({
   eventId, tiers, loading=false, error=null,
@@ -26,10 +26,8 @@ export default function RegisterPopup({
   const [feeHadError, setFeeHadError] = useState(false)
 
   // ==== Live BCV state (preferred source after fee.fx) ====
-  const [bcvRate, setBcvRate] = useState(() => {
-    const cached = Number(localStorage.getItem(BCV_RATE_KEY) || 0)
-    return Number.isFinite(cached) && cached > 0 ? cached : 0
-  })
+  // Start at 0 so we don't accidentally show stale cache that equals the fallback/env
+  const [bcvRate, setBcvRate] = useState(0)
   const [bcvSource, setBcvSource] = useState('') // 'bcv' | 'cache' | ''
 
   // Re-read token when login happens in modal
@@ -53,18 +51,27 @@ export default function RegisterPopup({
   const showCash  = !!payments?.cash?.enabled
   const showCard  = !isVenezuela
 
-  // ==== Fetch BCV on mount and refresh every 30 minutes (independent of tabs/method) ====
+  // ==== Fetch BCV on mount and refresh every 30 minutes ====
   useEffect(() => {
     let cancelled = false
     let intervalId
 
+    const isBadCache = (val) => {
+      // If cache equals the env-provided or our fallback, treat as invalid (from older code)
+      return val === FALLBACK_VES_RATE || (ENV_VES_RATE > 0 && val === ENV_VES_RATE)
+    }
+
     const readCacheFresh = () => {
       const cached = Number(localStorage.getItem(BCV_RATE_KEY) || 0)
       const ts = Number(localStorage.getItem(BCV_TS_KEY) || 0)
-      const fresh = cached > 0 && Date.now() - ts < BCV_TTL_MS
+      const fresh = cached > 0 && Date.now() - ts < BCV_TTL_MS && !isBadCache(cached)
       if (fresh) {
         setBcvRate(cached)
         setBcvSource('cache')
+      } else {
+        // purge bad/old cache so we don't reuse it
+        localStorage.removeItem(BCV_RATE_KEY)
+        localStorage.removeItem(BCV_TS_KEY)
       }
       return fresh
     }
@@ -80,15 +87,15 @@ export default function RegisterPopup({
           setBcvSource('bcv')
           localStorage.setItem(BCV_RATE_KEY, String(rate))
           localStorage.setItem(BCV_TS_KEY, String(Date.now()))
-          // keep legacy key for old code-paths
+          // keep legacy key for any older code-paths that still read it
           localStorage.setItem('ves_rate', String(rate))
         }
       } catch { /* ignore; we’ll show cached/env/fallback */ }
     }
 
-    // Use fresh cache immediately; then try to refresh in background
-    const hadFresh = readCacheFresh()
-    if (!hadFresh) fetchLive()
+    // Try cache (if good) then ALWAYS fetch to refresh
+    readCacheFresh()
+    fetchLive()
     intervalId = window.setInterval(fetchLive, BCV_TTL_MS)
 
     return () => {
@@ -109,7 +116,7 @@ export default function RegisterPopup({
   // ===== Currency / formatting
   const useVES = method === 'pagoMovil'
 
-  // Priority: fee.fx → liveBCV → organizer PM rate → env → ls → hard fallback
+  // Priority: fee.fx → liveBCV (bcvRate) → organizer PM rate → env → ls → hard fallback
   const incomingRate = useMemo(() => {
     const fromFee = fee && Number(fee.fxVesPerUsd)
     if (Number.isFinite(fromFee) && fromFee > 0) return fromFee
@@ -284,7 +291,6 @@ export default function RegisterPopup({
     return { rows, isEstimate: true }
   }, [fee, selectedTier, quantity, method, useVES, vesRate])
 
-  // Render
   return (
     <div className="popup-overlay" onClick={onClose}>
       <div className="popup-modal" onClick={(e) => e.stopPropagation()}>
