@@ -1,3 +1,4 @@
+// RegisterPopup.jsx
 import React, { useMemo, useState, useEffect } from 'react'
 import './RegisterPopup.css'
 import { fetchWithAuth, getAccessToken } from '../lib/authClient'
@@ -25,9 +26,9 @@ export default function RegisterPopup({
   const [feeLoading, setFeeLoading] = useState(false)
   const [feeHadError, setFeeHadError] = useState(false)
 
-  // ==== Live BCV state (preferred source after fee.fx) ====
+  // ==== Live BCV state (preferred source for Pago Móvil) ====
   const [bcvRate, setBcvRate] = useState(0)
-  const [bcvSource, setBcvSource] = useState('') // 'bcv' | 'cache' | ''
+  const [bcvSource, setBcvSource] = useState('') // 'override' | 'bcv' | 'cache' | ''
 
   // Re-read token when login happens in modal
   const [token, setToken] = useState(getAccessToken())
@@ -50,15 +51,13 @@ export default function RegisterPopup({
   const showCash  = !!payments?.cash?.enabled
   const showCard  = !isVenezuela
 
-  // ==== Fetch BCV on mount and refresh every 30 minutes ====
+  // ==== Fetch BCV on mount; refresh every 30 minutes; also on focus; react to storage ====
   useEffect(() => {
     let cancelled = false
     let intervalId
 
-    const isBadCache = (val) => {
-      // If cache equals the env-provided or our fallback, treat as invalid (from older code)
-      return val === FALLBACK_VES_RATE || (ENV_VES_RATE > 0 && val === ENV_VES_RATE)
-    }
+    const isBadCache = (val) =>
+      val === FALLBACK_VES_RATE || (ENV_VES_RATE > 0 && val === ENV_VES_RATE)
 
     const readCacheFresh = () => {
       const cached = Number(localStorage.getItem(BCV_RATE_KEY) || 0)
@@ -68,7 +67,6 @@ export default function RegisterPopup({
         setBcvRate(cached)
         setBcvSource('cache')
       } else {
-        // purge bad/old cache so we don't reuse it
         localStorage.removeItem(BCV_RATE_KEY)
         localStorage.removeItem(BCV_TS_KEY)
       }
@@ -83,23 +81,41 @@ export default function RegisterPopup({
         const rate = Number(json?.vesPerUsd || 0)
         if (!cancelled && Number.isFinite(rate) && rate > 0) {
           setBcvRate(rate)
-          setBcvSource('bcv')
+          setBcvSource(json?.overrideActive ? 'override' : (json?.source || 'bcv'))
           localStorage.setItem(BCV_RATE_KEY, String(rate))
           localStorage.setItem(BCV_TS_KEY, String(Date.now()))
-          // keep legacy key for any older code-paths that still read it
+          // legacy key compatibility
           localStorage.setItem('ves_rate', String(rate))
         }
-      } catch { /* ignore; we’ll show cached/env/fallback */ }
+      } catch { /* ignore; UI will use fallbacks */ }
+    }
+
+    // on focus, refresh
+    const onFocus = () => { fetchLive() }
+
+    // from other tabs (e.g., admin)
+    const onStorage = (e) => {
+      if (e.key === BCV_RATE_KEY && e.newValue) {
+        const n = Number(e.newValue)
+        if (Number.isFinite(n) && n > 0) {
+          setBcvRate(n)
+          setBcvSource('cache')
+        }
+      }
     }
 
     // Try cache (if good) then ALWAYS fetch to refresh
     readCacheFresh()
     fetchLive()
     intervalId = window.setInterval(fetchLive, BCV_TTL_MS)
+    window.addEventListener('focus', onFocus)
+    window.addEventListener('storage', onStorage)
 
     return () => {
       cancelled = true
       if (intervalId) window.clearInterval(intervalId)
+      window.removeEventListener('focus', onFocus)
+      window.removeEventListener('storage', onStorage)
     }
   }, [])
 
@@ -115,12 +131,17 @@ export default function RegisterPopup({
   // ===== Currency / formatting
   const useVES = method === 'pagoMovil'
 
-  // Priority: fee.fx → liveBCV (bcvRate) → organizer PM rate → env → ls → hard fallback
+  // 🔑 Priority: for Pago Móvil use the freshest live BCV; for others use fee.fx first.
   const incomingRate = useMemo(() => {
-    const fromFee = fee && Number(fee.fxVesPerUsd)
-    if (Number.isFinite(fromFee) && fromFee > 0) return fromFee
-
-    if (Number.isFinite(bcvRate) && bcvRate > 0) return bcvRate
+    if (method === 'pagoMovil') {
+      if (Number.isFinite(bcvRate) && bcvRate > 0) return bcvRate
+      const fromFeePM = fee && Number(fee.fxVesPerUsd)
+      if (Number.isFinite(fromFeePM) && fromFeePM > 0) return fromFeePM
+    } else {
+      const fromFee = fee && Number(fee.fxVesPerUsd)
+      if (Number.isFinite(fromFee) && fromFee > 0) return fromFee
+      if (Number.isFinite(bcvRate) && bcvRate > 0) return bcvRate
+    }
 
     const organizer = payments?.pagoMovil && Number(payments.pagoMovil.rate)
     if (Number.isFinite(organizer) && organizer > 0) return organizer
@@ -128,7 +149,7 @@ export default function RegisterPopup({
     if (ENV_VES_RATE > 0) return ENV_VES_RATE
     if (LS_VES_RATE  > 0) return LS_VES_RATE
     return FALLBACK_VES_RATE
-  }, [fee, bcvRate, payments])
+  }, [fee, bcvRate, payments, method])
 
   const vesRate = useMemo(() => {
     if (fee?.currency?.toUpperCase?.() === 'VES') return 1
@@ -265,7 +286,8 @@ export default function RegisterPopup({
     }
     fetchFee()
     return () => { cancelled = true; controller.abort() }
-  }, [eventId, selectedTierId, quantity, method, token])
+    // 🔁 Re-quote automatically when the *effective* FX for Pago Móvil changes
+  }, [eventId, selectedTierId, quantity, method, token, (method === 'pagoMovil' ? bcvRate : undefined)])
 
   // ===== Fee rows
   const feeRows = useMemo(() => {
@@ -303,9 +325,7 @@ export default function RegisterPopup({
           tiers.slice().sort((a,b)=>(a.tierOrder??0)-(b.tierOrder??0)).map((tier)=>{
             const selected = selectedTierId === tier.id
             const unavailable = isUnavailable(tier)
-            const desc = (tier.description ? [...new Set(
-              tier.description.split(/[\n•;]| - |\u2022/g).map(s => s.replace(/^[-•\u2022]\s*/, '').trim()).filter(Boolean)
-            )] : [])
+            const desc = splitDescription(tier.description)
             return (
               <div
                 key={tier.id}
@@ -365,9 +385,11 @@ export default function RegisterPopup({
                 )}
                 {method === 'pagoMovil' && (fee?.currency?.toUpperCase?.() !== 'VES') && vesRate > 0 && (
                   <div className="fee-hint">
-                    {(bcvSource === 'bcv' || bcvSource === 'cache')
-                      ? `BCV ${vesRate.toLocaleString(undefined,{ maximumFractionDigits: 6 })} Bs/USD`
-                      : `Converted at ${vesRate} Bs/USD.`}
+                    {bcvSource === 'override'
+                      ? `Override ${vesRate.toLocaleString(undefined,{ maximumFractionDigits: 6 })} Bs/USD`
+                      : (bcvSource === 'bcv' || bcvSource === 'cache')
+                        ? `BCV ${vesRate.toLocaleString(undefined,{ maximumFractionDigits: 6 })} Bs/USD`
+                        : `Converted at ${vesRate} Bs/USD.`}
                   </div>
                 )}
               </>
