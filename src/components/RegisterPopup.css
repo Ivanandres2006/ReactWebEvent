@@ -208,17 +208,13 @@
 }
 
 /* === Receipt upload === */
-.receipt-upload {
-  margin-top: 12px;
-}
-
+.receipt-upload { margin-top: 12px; }
 .receipt-label {
   color: #ffd166;
   display: block;
   margin-top: 10px;
   font-size: 0.9rem;
 }
-
 .receipt-upload input[type=file] {
   width: 100%;
   padding: 6px;
@@ -227,12 +223,7 @@
   border: 1px solid rgba(255, 255, 255, 0.15);
   color: #fff;
 }
-
-.receipt-preview {
-  position: relative;
-  margin-top: 8px;
-}
-
+.receipt-preview { position: relative; margin-top: 8px; }
 .receipt-preview img {
   display: block;
   width: 100%;
@@ -240,7 +231,6 @@
   border: 1px solid rgba(255, 255, 255, 0.1);
   max-width: 100%;
 }
-
 .remove-receipt {
   position: absolute;
   top: 6px;
@@ -257,13 +247,8 @@
   line-height: 22px;
   transition: background 0.2s ease;
 }
-
 .remove-receipt:hover { background: rgba(0, 0, 0, 0.7); }
-.error-text {
-  color: #ff6b6b;
-  font-size: 13px;
-  margin-top: 6px;
-}
+.error-text { color: #ff6b6b; font-size: 13px; margin-top: 6px; }
 
 /* === Primary action === */
 .buy-button {
