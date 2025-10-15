@@ -170,3 +170,52 @@
   border: 1px solid rgba(255,255,255,0.1);
   max-width: 100%;
 }
+
+/* === Receipt Upload Enhancements === */
+.upload-btn {
+  display: inline-block;
+  background: #00e676;
+  color: #07130c;
+  font-weight: 700;
+  padding: 10px 14px;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: opacity 0.2s ease, transform 0.05s ease;
+}
+.upload-btn:hover { opacity: 0.9; }
+.upload-btn:active { transform: translateY(1px); }
+
+.receipt-preview {
+  position: relative;
+  margin-top: 8px;
+}
+.receipt-preview img {
+  width: 100%;
+  border-radius: 10px;
+  border: 1px solid rgba(255,255,255,0.12);
+}
+.remove-receipt {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  background: rgba(0,0,0,0.5);
+  border: none;
+  color: #fff;
+  font-size: 16px;
+  font-weight: bold;
+  border-radius: 50%;
+  width: 26px;
+  height: 26px;
+  cursor: pointer;
+  line-height: 22px;
+  transition: background 0.2s ease;
+}
+.remove-receipt:hover {
+  background: rgba(0,0,0,0.7);
+}
+.error-text {
+  color: #ff6b6b;
+  font-size: 13px;
+  margin-top: 6px;
+}
+
