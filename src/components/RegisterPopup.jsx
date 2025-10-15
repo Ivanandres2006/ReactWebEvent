@@ -1,3 +1,4 @@
+// RegisterPopup.jsx
 import React, { useMemo, useState, useEffect } from 'react'
 import './RegisterPopup.css'
 import { fetchWithAuth, getAccessToken } from '../lib/authClient'
@@ -29,7 +30,7 @@ export default function RegisterPopup({
   const [bcvRate, setBcvRate] = useState(0)
   const [bcvSource, setBcvSource] = useState('') // 'override' | 'bcv' | 'cache' | ''
 
-  // === Receipt upload state ===
+  // Re-read token when login happens in modal
   const [token, setToken] = useState(getAccessToken())
   const [uploading, setUploading] = useState(false)
   const [receiptUrl, setReceiptUrl] = useState(null)
@@ -53,7 +54,7 @@ export default function RegisterPopup({
   const showCash  = !!payments?.cash?.enabled
   const showCard  = !isVenezuela
 
-  // ==== Fetch BCV ====
+  // ==== Fetch BCV on mount; refresh every 30 minutes; also on focus; react to storage ====
   useEffect(() => {
     let cancelled = false
     let intervalId
@@ -86,53 +87,45 @@ export default function RegisterPopup({
           setBcvSource(json?.overrideActive ? 'override' : (json?.source || 'bcv'))
           localStorage.setItem(BCV_RATE_KEY, String(rate))
           localStorage.setItem(BCV_TS_KEY, String(Date.now()))
+          // legacy key compatibility
           localStorage.setItem('ves_rate', String(rate))
         }
-      } catch {}
+      } catch { /* ignore; UI will use fallbacks */ }
     }
 
+    // on focus, refresh
+    const onFocus = () => { fetchLive() }
+
+    // from other tabs (e.g., admin)
+    const onStorage = (e) => {
+      if (e.key === BCV_RATE_KEY && e.newValue) {
+        const n = Number(e.newValue)
+        if (Number.isFinite(n) && n > 0) {
+          setBcvRate(n)
+          setBcvSource('cache')
+        }
+      }
+    }
+
+    // Try cache (if good) then ALWAYS fetch to refresh
     readCacheFresh()
     fetchLive()
     intervalId = window.setInterval(fetchLive, BCV_TTL_MS)
-    return () => { cancelled = true; if (intervalId) clearInterval(intervalId) }
+    window.addEventListener('focus', onFocus)
+    window.addEventListener('storage', onStorage)
+
+    return () => {
+      cancelled = true
+      if (intervalId) window.clearInterval(intervalId)
+      window.removeEventListener('focus', onFocus)
+      window.removeEventListener('storage', onStorage)
+    }
   }, [])
 
-  // === Upload receipt function ===
-  const uploadReceipt = async (file) => {
-    if (!file) return
-    if (file.size > 25 * 1024 * 1024) {
-      alert('File too large (max 25MB)')
-      return
-    }
-
-    try {
-      setUploading(true)
-      const f = new FormData()
-      f.append('file', file)
-
-      const res = await fetch(`${API}/api/tickets/${selectedTierId}/proof`, {
-        method: 'POST',
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-        body: f,
-      })
-
-      const data = await res.json()
-      if (res.ok && data?.proofUrl) {
-        setReceiptUrl(data.proofUrl)
-        alert('✅ Receipt uploaded successfully!')
-      } else {
-        alert(data?.error || 'Upload failed.')
-      }
-    } catch (e) {
-      console.error(e)
-      alert('Network error during upload.')
-    } finally {
-      setUploading(false)
-    }
-  }
-
-  // ===== Formatting and fee logic (unchanged) =====
+  // ===== Currency / formatting
   const useVES = method === 'pagoMovil'
+
+  // 🔑 Priority: for Pago Móvil use the freshest live BCV; for others use fee.fx first.
   const incomingRate = useMemo(() => {
     if (method === 'pagoMovil') {
       if (Number.isFinite(bcvRate) && bcvRate > 0) return bcvRate
@@ -143,8 +136,10 @@ export default function RegisterPopup({
       if (Number.isFinite(fromFee) && fromFee > 0) return fromFee
       if (Number.isFinite(bcvRate) && bcvRate > 0) return bcvRate
     }
+
     const organizer = payments?.pagoMovil && Number(payments.pagoMovil.rate)
     if (Number.isFinite(organizer) && organizer > 0) return organizer
+
     if (ENV_VES_RATE > 0) return ENV_VES_RATE
     if (LS_VES_RATE  > 0) return LS_VES_RATE
     return FALLBACK_VES_RATE
@@ -155,91 +150,161 @@ export default function RegisterPopup({
     return Math.max(0, Number(incomingRate) || 0)
   }, [fee?.currency, incomingRate])
 
-  const fmtUSD = (x) => `$${Number(x || 0).toFixed(2)}`
-  const fmtVES = (x) => `Bs. ${Number(x || 0).toFixed(2)}`
+  const fmtUSD = (x) =>
+    `$${Number(x || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+  const fmtVES = (x) =>
+    `Bs. ${Number(x || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+
   const fmtCents = (cents) => {
     const baseUSD = Number(cents || 0) / 100
-    if (useVES) return fmtVES(baseUSD * vesRate)
+    if (fee?.currency?.toUpperCase?.() === 'VES') return fmtVES(baseUSD)
+    if (useVES) return fmtVES(vesRate > 0 ? baseUSD * vesRate : baseUSD)
     return fmtUSD(baseUSD)
   }
 
-  const selectedTier = useMemo(() => (tiers || []).find(t => t?.id === selectedTierId), [tiers, selectedTierId])
+  const fmtUnitPrice = (usdNumber) => {
+    const usd = Number(usdNumber || 0)
+    if (fee?.currency?.toUpperCase?.() === 'VES') return fmtVES(usd)
+    if (useVES) return fmtVES(vesRate > 0 ? usd * vesRate : usd)
+    return fmtUSD(usd)
+  }
+
+  const splitDescription = (txt) =>
+    !txt ? [] : [...new Set(
+      txt.split(/[\n•;]| - |\u2022/g)
+         .map(s => s.replace(/^[-•\u2022]\s*/, '').trim())
+         .filter(Boolean)
+    )]
+
+  const selectedTier = useMemo(
+    () => (tiers || []).find((t) => t?.id === selectedTierId),
+    [tiers, selectedTierId]
+  )
+
   const canPay = !!selectedTierId && !submitting
 
-  // ===== UI =====
+  const handleConfirm = () => { if (canPay) onPay?.(method) }
+
   return (
     <div className="popup-overlay" onClick={onClose}>
       <div className="popup-modal" onClick={(e) => e.stopPropagation()}>
         <h3>Select Your Ticket</h3>
 
-        {/* === Payment method details === */}
         {method !== 'card' && (
           <div className="alt-details">
             {method === 'pagoMovil' && showPM && (
               <div className="alt-box">
                 {payments?.pagoMovil?.phone && <div>📱 {payments.pagoMovil.phone}</div>}
-                {payments?.pagoMovil?.ci && <div>🪪 CI: {payments.pagoMovil.ci}</div>}
-                {payments?.pagoMovil?.bank && <div>🏦 {payments.pagoMovil.bank}</div>}
-                <div className="alt-note">After paying via Pago Móvil, upload your receipt below.</div>
+                {payments?.pagoMovil?.ci    && <div>🪪 CI: {payments.pagoMovil.ci}</div>}
+                {payments?.pagoMovil?.bank  && <div>🏦 {payments.pagoMovil.bank}</div>}
+                <div className="alt-note">After paying via Pago Móvil, press <strong>Pay</strong> to notify the organizer.</div>
+
+                {/* RECEIPT UPLOAD ADDED */}
+                <label>Upload receipt (image)</label>
+                <input type="file" accept="image/*" disabled={uploading}
+                  onChange={async(e)=>{
+                    const file=e.target.files?.[0]
+                    if(!file)return
+                    if(file.size>25*1024*1024){alert('File too large (max 25 MB)');return}
+                    try{
+                      setUploading(true)
+                      const f=new FormData();f.append('file',file)
+                      const res=await fetch(`${API}/api/tickets/${selectedTierId}/proof`,{
+                        method:'POST',
+                        headers:token?{Authorization:`Bearer ${token}`}:{},
+                        body:f,
+                      })
+                      const data=await res.json()
+                      if(res.ok&&data?.proofUrl){
+                        setReceiptUrl(data.proofUrl)
+                        alert('✅ Receipt uploaded successfully.')
+                      }else alert(data?.error||'Upload failed.')
+                    }catch(err){console.error(err);alert('Network error')}
+                    finally{setUploading(false)}
+                  }}/>
+                {uploading&&<div>Uploading…</div>}
+                {receiptUrl&&<img src={receiptUrl} alt="receipt" style={{marginTop:'8px',maxWidth:'100%',borderRadius:'6px'}}/>}
               </div>
             )}
             {method === 'zelle' && showZelle && (
               <div className="alt-box">
                 {payments?.zelle?.email && <div>📧 {payments.zelle.email}</div>}
-                <div className="alt-note">After sending your Zelle payment, upload your receipt below.</div>
+                {payments?.zelle?.phone && <div>📞 {payments.zelle.phone}</div>}
+                <div className="alt-note">After sending your Zelle payment, press <strong>Pay</strong> to notify the organizer.</div>
+
+                {/* RECEIPT UPLOAD ADDED */}
+                <label>Upload receipt (image)</label>
+                <input type="file" accept="image/*" disabled={uploading}
+                  onChange={async(e)=>{
+                    const file=e.target.files?.[0]
+                    if(!file)return
+                    if(file.size>25*1024*1024){alert('File too large (max 25 MB)');return}
+                    try{
+                      setUploading(true)
+                      const f=new FormData();f.append('file',file)
+                      const res=await fetch(`${API}/api/tickets/${selectedTierId}/proof`,{
+                        method:'POST',
+                        headers:token?{Authorization:`Bearer ${token}`}:{},
+                        body:f,
+                      })
+                      const data=await res.json()
+                      if(res.ok&&data?.proofUrl){
+                        setReceiptUrl(data.proofUrl)
+                        alert('✅ Receipt uploaded successfully.')
+                      }else alert(data?.error||'Upload failed.')
+                    }catch(err){console.error(err);alert('Network error')}
+                    finally{setUploading(false)}
+                  }}/>
+                {uploading&&<div>Uploading…</div>}
+                {receiptUrl&&<img src={receiptUrl} alt="receipt" style={{marginTop:'8px',maxWidth:'100%',borderRadius:'6px'}}/>}
               </div>
             )}
             {method === 'cash' && showCash && (
               <div className="alt-box">
                 {payments?.cash?.note && <div>📝 {payments.cash.note}</div>}
-                <div className="alt-note">Upload a photo of your cash payment receipt if applicable.</div>
+                <div className="alt-note">Press <strong>Pay</strong> to notify the organizer that you’ll pay in cash.</div>
+
+                {/* RECEIPT UPLOAD ADDED */}
+                <label>Upload receipt (optional)</label>
+                <input type="file" accept="image/*" disabled={uploading}
+                  onChange={async(e)=>{
+                    const file=e.target.files?.[0]
+                    if(!file)return
+                    if(file.size>25*1024*1024){alert('File too large (max 25 MB)');return}
+                    try{
+                      setUploading(true)
+                      const f=new FormData();f.append('file',file)
+                      const res=await fetch(`${API}/api/tickets/${selectedTierId}/proof`,{
+                        method:'POST',
+                        headers:token?{Authorization:`Bearer ${token}`}:{},
+                        body:f,
+                      })
+                      const data=await res.json()
+                      if(res.ok&&data?.proofUrl){
+                        setReceiptUrl(data.proofUrl)
+                        alert('✅ Receipt uploaded successfully.')
+                      }else alert(data?.error||'Upload failed.')
+                    }catch(err){console.error(err);alert('Network error')}
+                    finally{setUploading(false)}
+                  }}/>
+                {uploading&&<div>Uploading…</div>}
+                {receiptUrl&&<img src={receiptUrl} alt="receipt" style={{marginTop:'8px',maxWidth:'100%',borderRadius:'6px'}}/>}
               </div>
             )}
-
-            {/* === Receipt upload === */}
-            <div className="receipt-upload">
-              <label className="receipt-label">Upload receipt (image)</label>
-              <input
-                type="file"
-                accept="image/*"
-                disabled={uploading}
-                onChange={(e) => uploadReceipt(e.target.files?.[0])}
-              />
-              {uploading && <div className="fee-hint">Uploading…</div>}
-              {receiptUrl && (
-                <img
-                  src={receiptUrl}
-                  alt="Receipt preview"
-                  style={{
-                    marginTop: '8px',
-                    maxWidth: '100%',
-                    borderRadius: '6px',
-                    border: '1px solid #444',
-                  }}
-                />
-              )}
-            </div>
           </div>
         )}
 
-        {/* === Pay button === */}
         <div className="pay-buttons">
           <button
             className="buy-button"
             disabled={!canPay}
-            onClick={() => onPay?.(method)}
+            onClick={handleConfirm}
             style={submitting ? { pointerEvents: 'none', opacity: 0.6 } : {}}
           >
             {submitting
-              ? (method === 'card' ? 'Processing…' : 'Sending…')
-              : (method === 'card' ? 'Pay with card' : `Pay (${method})`)}
+              ? (method==='card' ? 'Processing…' : 'Sending…')
+              : (method==='card' ? 'Pay with card' : `Pay (${method})`)}
           </button>
-
-          {method !== 'card' && (
-            <p className="pay-hint">
-              Manual methods notify the organizer. You’ll get your ticket by email after they confirm.
-            </p>
-          )}
         </div>
       </div>
     </div>
