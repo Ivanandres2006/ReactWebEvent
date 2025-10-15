@@ -1,15 +1,15 @@
-// RegisterPopup.jsx
 import React, { useMemo, useState, useEffect } from 'react'
 import './RegisterPopup.css'
 import { fetchWithAuth, getAccessToken } from '../lib/authClient'
 
 const API = 'https://backendevent-etce.onrender.com'
+
 const FALLBACK_VES_RATE = 179.43
 const ENV_VES_RATE = Number(import.meta?.env?.VITE_VES_PER_USD || 0)
 const LS_VES_RATE = Number(localStorage.getItem('ves_rate') || 0)
 const BCV_RATE_KEY = 'ves_rate_bcv'
 const BCV_TS_KEY = 'ves_rate_bcv_ts'
-const BCV_TTL_MS = 30 * 60 * 1000
+const BCV_TTL_MS = 30 * 60 * 1000 // 30 minutes
 
 export default function RegisterPopup({
   eventId, tiers, loading=false, error=null,
@@ -23,13 +23,13 @@ export default function RegisterPopup({
   const [bcvRate, setBcvRate] = useState(0)
   const [bcvSource, setBcvSource] = useState('')
   const [token, setToken] = useState(getAccessToken())
-  const [message, setMessage] = useState('')
 
-  // 🧾 Receipt upload
+  // 🧾 Receipt state
   const [receiptFile, setReceiptFile] = useState(null)
   const [receiptPreview, setReceiptPreview] = useState(null)
   const [receiptError, setReceiptError] = useState(null)
-  const [uploadingProof, setUploadingProof] = useState(false)
+  const [uploading, setUploading] = useState(false)
+  const [message, setMessage] = useState('')
 
   useEffect(() => {
     const onAuth = () => setToken(getAccessToken())
@@ -37,7 +37,7 @@ export default function RegisterPopup({
     return () => window.removeEventListener('auth:login', onAuth)
   }, [])
 
-  // === Country detection ===
+  // ===== Detect Venezuela -> hide Card =====
   const isVenezuela = useMemo(() => {
     const country = String(payments?.country || payments?.pagoMovil?.country || '').toLowerCase()
     const currency = String(payments?.currency || '').toUpperCase()
@@ -49,7 +49,7 @@ export default function RegisterPopup({
   const showCash = !!payments?.cash?.enabled
   const showCard = !isVenezuela
 
-  // === BCV Fetch ===
+  // ==== Fetch BCV on mount ====
   useEffect(() => {
     let cancelled = false
     const readCache = () => {
@@ -97,7 +97,7 @@ export default function RegisterPopup({
     return useVES ? fmtVES(usd * vesRate) : fmtUSD(usd)
   }
 
-  // === Receipt Handling ===
+  // ===== Handle receipt upload ====
   const handleReceiptChange = (e) => {
     const file = e.target.files?.[0]
     if (!file) return
@@ -107,12 +107,9 @@ export default function RegisterPopup({
     reader.onload = (ev) => setReceiptPreview(ev.target.result)
     reader.readAsDataURL(file)
   }
-  const removeReceipt = () => {
-    setReceiptFile(null)
-    setReceiptPreview(null)
-  }
+  const removeReceipt = () => { setReceiptFile(null); setReceiptPreview(null) }
 
-  // === Fee Fetch ===
+  // ===== Fetch Fee =====
   useEffect(() => {
     if (!eventId || !selectedTierId || quantity < 1) return
     let cancelled = false
@@ -140,7 +137,6 @@ export default function RegisterPopup({
   const maxQty = useMemo(() => Math.max(1, Math.min(10, selectedTier?.availableQuantity || 10)), [selectedTier])
   const canPay = !!selectedTierId && quantity>=1 && quantity<=maxQty && !submitting
 
-  // === Proof upload helper ===
   async function uploadProof(ticketId, file) {
     const form = new FormData()
     form.append('file', file)
@@ -161,15 +157,14 @@ export default function RegisterPopup({
     return success
   }
 
-  // === Handle payment ===
+  // ===== Handle confirm (checkout + proof) =====
   const handleConfirm = async () => {
     if (!canPay) return
     if ((method === 'pagoMovil' || method === 'zelle') && !receiptFile) {
       setReceiptError('Please attach your payment receipt.')
       return
     }
-
-    setMessage('')
+    setUploading(true)
     try {
       const params = { eventId, ticketTierId: selectedTierId, quantity, paymentMethod: method }
       const res = await fetchWithAuth(`${API}/api/tickets/checkout`, {
@@ -180,34 +175,41 @@ export default function RegisterPopup({
       if (!res.ok) throw new Error()
       const data = await res.json()
 
-      // === Handle manual flow like SwiftUI ===
+      // === Handle manual ===
       if (data.manual) {
         const ticketIds = data.ticketIds || (data.ticketId ? [data.ticketId] : [])
         if (receiptFile && ticketIds.length) {
-          setUploadingProof(true)
           const ok = await uploadAllProofs(ticketIds, receiptFile)
-          setUploadingProof(false)
           setMessage(`📸 Receipt uploaded for ${ok}/${ticketIds.length} ticket(s).`)
         } else {
           setMessage('✅ Payment recorded. Organizer will confirm soon.')
         }
+        setUploading(false)
         onClose?.()
         return
       }
 
-      // === Stripe flow ===
+      // === Handle free ===
+      if (data.free) {
+        setMessage('🎟️ Free ticket confirmed!')
+        setUploading(false)
+        onClose?.()
+        return
+      }
+
+      // === Handle Stripe ===
       if (data.clientSecret) {
-        setMessage('Opening Stripe checkout...')
         await onPay?.(method, data.clientSecret)
+        setUploading(false)
         onClose?.()
       }
-    } catch (e) {
-      console.error(e)
+    } catch {
+      setUploading(false)
       setMessage('Payment failed. Try again.')
     }
   }
 
-  // === Fee rows ===
+  // ===== Fee rows =====
   const feeRows = useMemo(() => {
     if (!fee) return []
     const rows = []
@@ -233,7 +235,7 @@ export default function RegisterPopup({
         <h3>Select Your Ticket</h3>
 
         {/* Tiers */}
-        {loading ? <div className="empty-tiers">Loading...</div> :
+        {loading ? <div className="empty-tiers">Loading…</div> :
          error ? <div className="empty-tiers">Couldn’t load tiers.</div> :
          (tiers||[]).map(t => {
           const unavailable = (t.availableQuantity||0)<=0
@@ -269,7 +271,7 @@ export default function RegisterPopup({
           </div>
         )}
 
-        {/* Payment tabs */}
+        {/* Payment method tabs */}
         <div className="method-tabs">
           {showCard && <button className={`tab ${method==='card'?'active':''}`} onClick={()=>setMethod('card')}>Card</button>}
           {showPM && <button className={`tab ${method==='pagoMovil'?'active':''}`} onClick={()=>setMethod('pagoMovil')}>Pago Móvil</button>}
@@ -277,7 +279,7 @@ export default function RegisterPopup({
           {showCash && <button className={`tab ${method==='cash'?'active':''}`} onClick={()=>setMethod('cash')}>Cash</button>}
         </div>
 
-        {/* Manual info */}
+        {/* Manual details */}
         {method!=='card' && (
           <div className="alt-details">
             {method==='pagoMovil' && showPM && (
@@ -285,14 +287,14 @@ export default function RegisterPopup({
                 {payments?.pagoMovil?.phone && <div>📱 {payments.pagoMovil.phone}</div>}
                 {payments?.pagoMovil?.ci && <div>🪪 CI: {payments.pagoMovil.ci}</div>}
                 {payments?.pagoMovil?.bank && <div>🏦 {payments.pagoMovil.bank}</div>}
-                <div className="alt-note">After paying, attach receipt and press Pay.</div>
+                <div className="alt-note">After paying, attach your receipt and press Pay.</div>
               </div>
             )}
             {method==='zelle' && showZelle && (
               <div className="alt-box">
                 {payments?.zelle?.email && <div>📧 {payments.zelle.email}</div>}
                 {payments?.zelle?.phone && <div>📞 {payments.zelle.phone}</div>}
-                <div className="alt-note">After paying, attach receipt and press Pay.</div>
+                <div className="alt-note">After sending your Zelle, attach receipt and press Pay.</div>
               </div>
             )}
             {method==='cash' && showCash && (
@@ -315,16 +317,16 @@ export default function RegisterPopup({
                     Attach Receipt
                   </label>
                 )}
-                {receiptError && <div style={{color:'red',fontSize:12}}>{receiptError}</div>}
+                {receiptError && <div className="error-text">{receiptError}</div>}
               </div>
             )}
           </div>
         )}
 
-        {/* Pay Button */}
+        {/* Pay button */}
         <div className="pay-buttons">
-          <button className="buy-button" disabled={!canPay||uploadingProof} onClick={handleConfirm}>
-            {uploadingProof ? 'Uploading…' : (method==='card'?'Pay with card':`Pay (${method})`)}
+          <button className="buy-button" disabled={!canPay||uploading} onClick={handleConfirm}>
+            {uploading ? 'Processing…' : (method==='card'?'Pay with card':`Pay (${method})`)}
           </button>
           {method!=='card' && <p className="pay-hint">You’ll get your ticket after organizer confirmation.</p>}
         </div>
