@@ -15,15 +15,15 @@ export default function RegisterPopup({
   selectedTierId, quantity, submitting=false, payments=null,
   onClose, onSelectTier, onQuantityChange, onPay,
 }) {
-  const [method,setMethod] = useState('card')
-  const [fee,setFee] = useState(null)
-  const [feeLoading,setFeeLoading] = useState(false)
-  const [feeHadError,setFeeHadError] = useState(false)
-  const [bcvRate,setBcvRate] = useState(0)
-  const [bcvSource,setBcvSource] = useState('')
-  const [token,setToken] = useState(getAccessToken())
-  const [uploading,setUploading] = useState(false)
-  const [receiptUrl,setReceiptUrl] = useState(localStorage.getItem('pendingReceiptUrl')||null)
+  const [method, setMethod] = useState('card')
+  const [fee, setFee] = useState(null)
+  const [feeLoading, setFeeLoading] = useState(false)
+  const [feeHadError, setFeeHadError] = useState(false)
+  const [bcvRate, setBcvRate] = useState(0)
+  const [bcvSource, setBcvSource] = useState('')
+  const [token, setToken] = useState(getAccessToken())
+  const [uploading, setUploading] = useState(false)
+  const [receiptUrl, setReceiptUrl] = useState(null)
 
   useEffect(()=>{
     const onAuth=()=>setToken(getAccessToken())
@@ -43,7 +43,7 @@ export default function RegisterPopup({
   const showCash=!!payments?.cash?.enabled
   const showCard=!isVenezuela
 
-  // === Live BCV ===
+  // === BCV fetch ===
   useEffect(()=>{
     let cancel=false
     const readCacheFresh=()=>{
@@ -74,28 +74,27 @@ export default function RegisterPopup({
   },[])
 
   // === Upload receipt ===
-  async function uploadReceipt(file){
+  async function uploadReceipt(ticketId,file){
     if(!file)return
     if(file.size>25*1024*1024){alert('File too large (max 25 MB)');return}
     try{
       setUploading(true)
       const f=new FormData();f.append('file',file)
-      const res=await fetch(`${API}/api/tickets/upload-proof`,{
+      const res=await fetch(`${API}/api/tickets/${ticketId}/proof`,{
         method:'POST',
         headers:token?{Authorization:`Bearer ${token}`}:{},
         body:f,
       })
       const data=await res.json()
-      if(res.ok&&data?.url){
-        setReceiptUrl(data.url)
-        localStorage.setItem('pendingReceiptUrl',data.url)
+      if(res.ok&&data?.proofUrl){
+        setReceiptUrl(data.proofUrl)
         alert('✅ Receipt uploaded successfully.')
       }else alert(data?.error||'Upload failed.')
     }catch(e){console.error(e);alert('Network error')}
     finally{setUploading(false)}
   }
 
-  // === Rates and formatting
+  // === Rate & formatting ===
   const useVES=method==='pagoMovil'
   const vesRate=bcvRate||ENV_VES_RATE||LS_VES_RATE||FALLBACK_VES_RATE
   const fmtUSD=x=>`$${Number(x||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}`
@@ -105,7 +104,7 @@ export default function RegisterPopup({
     return useVES?fmtVES(usd*vesRate):fmtUSD(usd)
   }
 
-  // === Fee quote
+  // === Fee quote ===
   useEffect(()=>{
     if(!eventId||!selectedTierId||quantity<1)return
     let cancel=false
@@ -127,7 +126,6 @@ export default function RegisterPopup({
 
   const selectedTier=(tiers||[]).find(t=>t?.id===selectedTierId)
   const canPay=!!selectedTierId&&!submitting
-
   const feeRows=useMemo(()=>{
     const rows=[]
     if(fee&&typeof fee.totalCents==='number'){
@@ -144,27 +142,51 @@ export default function RegisterPopup({
     onPay?.(method)
   }
 
+  // === UI ===
   return(
     <div className="popup-overlay"onClick={onClose}>
       <div className="popup-modal"onClick={e=>e.stopPropagation()}>
         <h3>Select Your Ticket</h3>
 
-        {/* Fee */}
-        {feeLoading?<div className="fee-row muted">Calculating fees…</div>:
-          feeRows.length>0&&(
-            <div className="fee-box">
-              {feeRows.map((r,i)=>
-                <div key={i}className={`fee-row${r.strong?' total':''}`}>
-                  <span className="fee-label">{r.label}</span>
-                  <span className="fee-value">{r.value}</span>
+        {/* Tiers */}
+        {tiers?.length ? (
+          tiers.slice().sort((a,b)=>(a.tierOrder??0)-(b.tierOrder??0)).map(tier=>{
+            const selected=selectedTierId===tier.id
+            return(
+              <div key={tier.id}
+                className={`ticket-tier rich ${selected?'selected':''}`}
+                onClick={()=>onSelectTier(tier.id)}
+              >
+                <div className="tier-row">
+                  <div className="tier-name">{tier.name}</div>
+                  <div className="tier-price">{fmtUSD(tier.price)}</div>
                 </div>
-              )}
-              {feeHadError&&<div className="fee-hint">Estimate only – final fees at checkout.</div>}
-            </div>
-          )
-        }
+                {tier.description&&<div className="tier-desc">{tier.description}</div>}
+              </div>
+            )
+          })
+        ):<div>No tiers</div>}
 
-        {/* Method Tabs */}
+        {/* Quantity */}
+        <div className="ticket-quantity">
+          <label>Quantity</label>
+          <input type="number"min="1"max="10"value={quantity}
+            onChange={e=>onQuantityChange(Math.max(1,Math.min(10,Number(e.target.value)||1)))}/>
+        </div>
+
+        {/* Fees */}
+        {selectedTierId&&quantity>=1&&(
+          <div className="fee-box">
+            {feeLoading?<div className="fee-row muted">Calculating fees…</div>:
+              feeRows.map((r,i)=>(
+                <div key={i}className={`fee-row${r.strong?' total':''}`}>
+                  <span>{r.label}</span><span>{r.value}</span>
+                </div>
+              ))}
+          </div>
+        )}
+
+        {/* Payment methods */}
         <div className="method-tabs">
           {showCard&&<button className={`tab ${method==='card'?'active':''}`}onClick={()=>setMethod('card')}>Card</button>}
           {showPM&&<button className={`tab ${method==='pagoMovil'?'active':''}`}onClick={()=>setMethod('pagoMovil')}>Pago Móvil</button>}
@@ -172,56 +194,44 @@ export default function RegisterPopup({
           {showCash&&<button className={`tab ${method==='cash'?'active':''}`}onClick={()=>setMethod('cash')}>Cash</button>}
         </div>
 
-        {/* Manual methods with receipt */}
+        {/* Alt methods */}
         {method!=='card'&&(
           <div className="alt-details">
             {method==='pagoMovil'&&showPM&&(
               <div className="alt-box">
-                {payments?.pagoMovil?.phone&&<div>📱 {payments.pagoMovil.phone}</div>}
-                {payments?.pagoMovil?.ci&&<div>🪪 CI: {payments.pagoMovil.ci}</div>}
-                {payments?.pagoMovil?.bank&&<div>🏦 {payments.pagoMovil.bank}</div>}
-                <div className="alt-note">Upload receipt after Pago Móvil payment:</div>
-                <div className="receipt-upload">
-                  <label className="receipt-label">Upload receipt (image)</label>
-                  <input type="file"accept="image/*"disabled={uploading}
-                    onChange={e=>uploadReceipt(e.target.files?.[0])}/>
-                  {uploading&&<div className="fee-hint">Uploading…</div>}
-                  {receiptUrl&&<div className="receipt-preview"><img src={receiptUrl}alt="receipt"/></div>}
-                </div>
+                <div>📱 {payments?.pagoMovil?.phone}</div>
+                <div>🪪 CI: {payments?.pagoMovil?.ci}</div>
+                <div>🏦 {payments?.pagoMovil?.bank}</div>
+                <label className="receipt-label">Upload receipt (image)</label>
+                <input type="file"accept="image/*"disabled={uploading}
+                  onChange={e=>uploadReceipt(selectedTierId,e.target.files?.[0])}/>
+                {uploading&&<div className="fee-hint">Uploading…</div>}
+                {receiptUrl&&<img src={receiptUrl}alt="receipt"style={{marginTop:'8px',maxWidth:'100%',borderRadius:'6px'}}/>}
               </div>
             )}
-
             {method==='zelle'&&showZelle&&(
               <div className="alt-box">
-                {payments?.zelle?.email&&<div>📧 {payments.zelle.email}</div>}
-                <div className="alt-note">Upload your Zelle receipt:</div>
-                <div className="receipt-upload">
-                  <label className="receipt-label">Upload receipt (image)</label>
-                  <input type="file"accept="image/*"disabled={uploading}
-                    onChange={e=>uploadReceipt(e.target.files?.[0])}/>
-                  {uploading&&<div className="fee-hint">Uploading…</div>}
-                  {receiptUrl&&<div className="receipt-preview"><img src={receiptUrl}alt="receipt"/></div>}
-                </div>
+                <div>📧 {payments?.zelle?.email}</div>
+                <label className="receipt-label">Upload receipt (image)</label>
+                <input type="file"accept="image/*"disabled={uploading}
+                  onChange={e=>uploadReceipt(selectedTierId,e.target.files?.[0])}/>
+                {uploading&&<div className="fee-hint">Uploading…</div>}
+                {receiptUrl&&<img src={receiptUrl}alt="receipt"style={{marginTop:'8px',maxWidth:'100%',borderRadius:'6px'}}/>}
               </div>
             )}
-
             {method==='cash'&&showCash&&(
               <div className="alt-box">
-                {payments?.cash?.note&&<div>📝 {payments.cash.note}</div>}
-                <div className="alt-note">Optional: upload cash payment proof.</div>
-                <div className="receipt-upload">
-                  <label className="receipt-label">Upload receipt (optional)</label>
-                  <input type="file"accept="image/*"disabled={uploading}
-                    onChange={e=>uploadReceipt(e.target.files?.[0])}/>
-                  {uploading&&<div className="fee-hint">Uploading…</div>}
-                  {receiptUrl&&<div className="receipt-preview"><img src={receiptUrl}alt="receipt"/></div>}
-                </div>
+                <div>📝 {payments?.cash?.note}</div>
+                <label className="receipt-label">Upload receipt (optional)</label>
+                <input type="file"accept="image/*"disabled={uploading}
+                  onChange={e=>uploadReceipt(selectedTierId,e.target.files?.[0])}/>
+                {uploading&&<div className="fee-hint">Uploading…</div>}
+                {receiptUrl&&<img src={receiptUrl}alt="receipt"style={{marginTop:'8px',maxWidth:'100%',borderRadius:'6px'}}/>}
               </div>
             )}
           </div>
         )}
 
-        {/* Confirm */}
         <div className="pay-buttons">
           <button className="buy-button"disabled={!canPay}onClick={handleConfirm}>
             {submitting?(method==='card'?'Processing…':'Sending…')

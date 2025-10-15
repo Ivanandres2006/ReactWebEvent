@@ -139,11 +139,20 @@
 }
 
 .receipt-label {
+  color: #ffd166;
   display: block;
-  font-weight: 600;
-  margin-bottom: 4px;
-  color: #FFD966;
+  margin-top: 10px;
+  font-size: 0.9rem;
 }
+.fee-hint {
+  color: #aaa;
+  font-size: 0.8rem;
+  margin-top: 4px;
+}
+.alt-box img {
+  border: 1px solid #333;
+}
+
 
 .receipt-upload input[type=file] {
   width: 100%;
