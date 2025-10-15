@@ -1,47 +1,46 @@
 import React, { useMemo, useState, useEffect } from 'react'
 import './RegisterPopup.css'
 import { fetchWithAuth, getAccessToken } from '../lib/authClient'
+import { useNavigate } from 'react-router-dom'
 
 const API = 'https://backendevent-etce.onrender.com'
 
 const FALLBACK_VES_RATE = 179.43
 const ENV_VES_RATE = Number(import.meta?.env?.VITE_VES_PER_USD || 0)
-const LS_VES_RATE = Number(localStorage.getItem('ves_rate') || 0)
+const LS_VES_RATE  = Number(localStorage.getItem('ves_rate') || 0)
+
 const BCV_RATE_KEY = 'ves_rate_bcv'
-const BCV_TS_KEY = 'ves_rate_bcv_ts'
-const BCV_TTL_MS = 30 * 60 * 1000 // 30 minutes
+const BCV_TS_KEY   = 'ves_rate_bcv_ts'
+const BCV_TTL_MS   = 30 * 60 * 1000 // 30 min
 
 export default function RegisterPopup({
   eventId, tiers, loading=false, error=null,
   selectedTierId, quantity, submitting=false, payments=null,
-  onClose, onSelectTier, onQuantityChange, onPay
+  onClose, onSelectTier, onQuantityChange
 }) {
+  const navigate = useNavigate()
   const [method, setMethod] = useState('card')
+  const [token, setToken] = useState(getAccessToken())
   const [fee, setFee] = useState(null)
   const [feeLoading, setFeeLoading] = useState(false)
   const [feeHadError, setFeeHadError] = useState(false)
   const [bcvRate, setBcvRate] = useState(0)
   const [bcvSource, setBcvSource] = useState('')
-  const [token, setToken] = useState(getAccessToken())
-
-  // 🧾 Receipt state
   const [receiptFile, setReceiptFile] = useState(null)
-  const [receiptPreview, setReceiptPreview] = useState(null)
-  const [receiptError, setReceiptError] = useState(null)
-  const [uploading, setUploading] = useState(false)
-  const [message, setMessage] = useState('')
+  const [toast, setToast] = useState('')
 
+  // listen for login refresh
   useEffect(() => {
     const onAuth = () => setToken(getAccessToken())
     window.addEventListener('auth:login', onAuth)
     return () => window.removeEventListener('auth:login', onAuth)
   }, [])
 
-  // ===== Detect Venezuela -> hide Card =====
+  // ========== Helpers ==========
   const isVenezuela = useMemo(() => {
-    const country = String(payments?.country || payments?.pagoMovil?.country || '').toLowerCase()
-    const currency = String(payments?.currency || '').toUpperCase()
-    return country === 'venezuela' || currency === 'VES' || !!payments?.pagoMovil?.enabled
+    const c = String(payments?.country || '').toLowerCase()
+    const cur = String(payments?.currency || '').toUpperCase()
+    return c === 'venezuela' || cur === 'VES' || !!payments?.pagoMovil?.enabled
   }, [payments])
 
   const showZelle = !!payments?.zelle?.enabled
@@ -49,37 +48,35 @@ export default function RegisterPopup({
   const showCash = !!payments?.cash?.enabled
   const showCard = !isVenezuela
 
-  // ==== Fetch BCV on mount ====
+  // redirect toast util
+  const showToast = (msg) => {
+    setToast(msg)
+    setTimeout(() => setToast(''), 1500)
+  }
+
+  // ==== BCV live fetch ====
   useEffect(() => {
     let cancelled = false
-    const readCache = () => {
-      const cached = Number(localStorage.getItem(BCV_RATE_KEY) || 0)
-      const ts = Number(localStorage.getItem(BCV_TS_KEY) || 0)
-      const fresh = cached > 0 && Date.now() - ts < BCV_TTL_MS
-      if (fresh) { setBcvRate(cached); setBcvSource('cache') }
-      return fresh
-    }
     const fetchLive = async () => {
       try {
         const res = await fetch(`${API}/api/fx/ves-per-usd`)
         if (!res.ok) return
-        const json = await res.json()
-        const rate = Number(json?.vesPerUsd || 0)
+        const j = await res.json()
+        const rate = Number(j?.vesPerUsd || 0)
         if (!cancelled && rate > 0) {
           setBcvRate(rate)
-          setBcvSource(json?.overrideActive ? 'override' : (json?.source || 'bcv'))
-          localStorage.setItem(BCV_RATE_KEY, String(rate))
-          localStorage.setItem(BCV_TS_KEY, String(Date.now()))
-          localStorage.setItem('ves_rate', String(rate))
+          setBcvSource(j?.overrideActive ? 'override' : (j?.source || 'bcv'))
+          localStorage.setItem(BCV_RATE_KEY, rate)
+          localStorage.setItem(BCV_TS_KEY, Date.now())
         }
       } catch {}
     }
-    readCache()
     fetchLive()
     const id = setInterval(fetchLive, BCV_TTL_MS)
     return () => { cancelled = true; clearInterval(id) }
   }, [])
 
+  // Auto-switch if card hidden
   useEffect(() => {
     if (!showCard && method === 'card') {
       if (showPM) setMethod('pagoMovil')
@@ -89,189 +86,100 @@ export default function RegisterPopup({
   }, [showCard, showPM, showZelle, showCash])
 
   const useVES = method === 'pagoMovil'
-  const vesRate = useMemo(() => bcvRate || ENV_VES_RATE || LS_VES_RATE || FALLBACK_VES_RATE, [bcvRate])
-  const fmtUSD = (x) => `$${Number(x || 0).toFixed(2)}`
-  const fmtVES = (x) => `Bs. ${Number(x || 0).toFixed(2)}`
-  const fmtCents = (c) => {
-    const usd = Number(c || 0) / 100
-    return useVES ? fmtVES(usd * vesRate) : fmtUSD(usd)
-  }
+  const vesRate = bcvRate || ENV_VES_RATE || LS_VES_RATE || FALLBACK_VES_RATE
+  const fmtUSD = (x)=>`$${Number(x||0).toFixed(2)}`
+  const fmtVES = (x)=>`Bs. ${Number(x||0).toFixed(2)}`
+  const fmtCents = (c)=> useVES?fmtVES((c/100)*vesRate):fmtUSD(c/100)
 
-  // ===== Handle receipt upload ====
-  const handleReceiptChange = (e) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-    setReceiptFile(file)
-    setReceiptError(null)
-    const reader = new FileReader()
-    reader.onload = (ev) => setReceiptPreview(ev.target.result)
-    reader.readAsDataURL(file)
-  }
-  const removeReceipt = () => { setReceiptFile(null); setReceiptPreview(null) }
-
-  // ===== Fetch Fee =====
-  useEffect(() => {
-    if (!eventId || !selectedTierId || quantity < 1) return
-    let cancelled = false
-    const controller = new AbortController()
-    const fetchFee = async () => {
-      try {
-        setFeeLoading(true)
-        const params = new URLSearchParams({
-          eventId, ticketTierId: selectedTierId, quantity, paymentMethod: method
-        })
-        const url = `${API}/api/tickets/quote?${params}`
-        let res = await fetchWithAuth(url, { signal: controller.signal })
-        if (!res.ok && res.status !== 401) res = await fetch(url)
-        if (!res.ok) throw new Error()
-        const data = await res.json()
-        if (!cancelled) setFee(data)
-      } catch { if (!cancelled) setFeeHadError(true) }
-      finally { if (!cancelled) setFeeLoading(false) }
-    }
-    fetchFee()
-    return () => { cancelled = true; controller.abort() }
-  }, [eventId, selectedTierId, quantity, method, token])
-
-  const selectedTier = useMemo(() => (tiers||[]).find(t=>t.id===selectedTierId), [tiers, selectedTierId])
-  const maxQty = useMemo(() => Math.max(1, Math.min(10, selectedTier?.availableQuantity || 10)), [selectedTier])
+  // ===== Tier logic =====
+  const selectedTier = useMemo(()=>tiers?.find(t=>t.id===selectedTierId),[tiers,selectedTierId])
+  const maxQty = Math.max(1, Math.min(10, Number(selectedTier?.availableQuantity??10)))
   const canPay = !!selectedTierId && quantity>=1 && quantity<=maxQty && !submitting
 
-  async function uploadProof(ticketId, file) {
-    const form = new FormData()
-    form.append('file', file)
-    const res = await fetch(`${API}/api/tickets/${ticketId}/proof`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${token}` },
-      body: form
-    })
-    return res.ok
-  }
-
-  async function uploadAllProofs(ticketIds, file) {
-    let success = 0
-    for (const id of ticketIds) {
-      const ok = await uploadProof(id, file)
-      if (ok) success++
+  // ===== Fee quote =====
+  useEffect(()=>{
+    if(!eventId||!selectedTierId||quantity<1)return
+    let cancel=false
+    const f=async()=>{
+      try{
+        setFeeLoading(true)
+        const params=new URLSearchParams({eventId,ticketTierId:selectedTierId,quantity,paymentMethod:method})
+        let res=await fetchWithAuth(`${API}/api/tickets/quote?${params}`)
+        if(!res.ok)res=await fetch(`${API}/api/tickets/quote?${params}`)
+        if(!res.ok)throw new Error()
+        const d=await res.json()
+        if(!cancel)setFee(d)
+      }catch{ if(!cancel)setFeeHadError(true) }
+      finally{ if(!cancel)setFeeLoading(false) }
     }
-    return success
-  }
+    f();return()=>cancel=true
+  },[eventId,selectedTierId,quantity,method,token])
 
-  // ===== Handle confirm (checkout + proof) =====
-  const handleConfirm = async () => {
-    if (!canPay) return
-    if ((method === 'pagoMovil' || method === 'zelle') && !receiptFile) {
-      setReceiptError('Please attach your payment receipt.')
-      return
-    }
-    setUploading(true)
-    try {
-      const params = { eventId, ticketTierId: selectedTierId, quantity, paymentMethod: method }
-      const res = await fetchWithAuth(`${API}/api/tickets/checkout`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(params)
+  // ===== Checkout handler =====
+  const handleCheckout = async()=>{
+    if(!canPay)return
+    try{
+      const payload={eventId,ticketTierId:selectedTierId,quantity,paymentMethod:method}
+      const res=await fetchWithAuth(`${API}/api/tickets/checkout`,{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify(payload)
       })
-      if (!res.ok) throw new Error()
-      const data = await res.json()
+      if(!res.ok)throw new Error('checkout failed')
+      const data=await res.json()
+      const ticketIds=data.ticketIds||[]
+      const pending=(method!=='card')
+      const since=Date.now()
 
-      // === Handle manual ===
-      if (data.manual) {
-        const ticketIds = data.ticketIds || (data.ticketId ? [data.ticketId] : [])
-        if (receiptFile && ticketIds.length) {
-          const ok = await uploadAllProofs(ticketIds, receiptFile)
-          setMessage(`📸 Receipt uploaded for ${ok}/${ticketIds.length} ticket(s).`)
-        } else {
-          setMessage('✅ Payment recorded. Organizer will confirm soon.')
-        }
-        setUploading(false)
-        onClose?.()
-        return
+      // upload proof if manual + receipt selected
+      if(pending && receiptFile && ticketIds.length>0){
+        const fd=new FormData()
+        fd.append('file',receiptFile)
+        await Promise.all(ticketIds.map(id=>
+          fetch(`${API}/api/tickets/${id}/proof`,{
+            method:'POST',
+            headers:{Authorization:`Bearer ${getAccessToken()}`},
+            body:fd
+          })
+        ))
+        showToast('📸 Receipt uploaded successfully — redirecting...')
+      }else{
+        showToast('✅ Payment successful — redirecting...')
       }
 
-      // === Handle free ===
-      if (data.free) {
-        setMessage('🎟️ Free ticket confirmed!')
-        setUploading(false)
+      setTimeout(()=>{
+        const q=new URLSearchParams({
+          eventId,
+          ...(pending?{pending:method,since}:{pi:data.paymentIntentId||''})
+        })
+        navigate(`/payment/success?${q.toString()}`)
         onClose?.()
-        return
-      }
-
-      // === Handle Stripe ===
-      if (data.clientSecret) {
-        await onPay?.(method, data.clientSecret)
-        setUploading(false)
-        onClose?.()
-      }
-    } catch {
-      setUploading(false)
-      setMessage('Payment failed. Try again.')
+      },1500)
+    }catch(e){
+      console.error(e)
+      showToast('❌ Something went wrong.')
     }
   }
-
-  // ===== Fee rows =====
-  const feeRows = useMemo(() => {
-    if (!fee) return []
-    const rows = []
-    if (fee.originalSubtotalCents && fee.discountCentsApplied > 0) {
-      rows.push({ label: 'Subtotal', value: fmtCents(fee.originalSubtotalCents) })
-      const code = fee.discountCodeApplied ? ` (${fee.discountCodeApplied})` : ''
-      rows.push({ label: `Discount${code}`, value: `− ${fmtCents(fee.discountCentsApplied)}` })
-      rows.push({ label: 'New subtotal', value: fmtCents(fee.subtotalCents) })
-    } else {
-      rows.push({ label: 'Subtotal', value: fmtCents(fee.subtotalCents) })
-    }
-    if (fee.serviceFeeCents>0)
-      rows.push({ label: 'Service fee', value: fmtCents(fee.serviceFeeCents) })
-    if (method==='card' && fee.stripeFeeCents>0)
-      rows.push({ label: 'Stripe fee', value: fmtCents(fee.stripeFeeCents) })
-    rows.push({ label: 'Total', value: fmtCents(fee.totalCents), strong: true })
-    return rows
-  }, [fee, method, useVES, vesRate])
 
   return (
+    <>
     <div className="popup-overlay" onClick={onClose}>
-      <div className="popup-modal" onClick={(e)=>e.stopPropagation()}>
+      <div className="popup-modal" onClick={e=>e.stopPropagation()}>
         <h3>Select Your Ticket</h3>
 
-        {/* Tiers */}
-        {loading ? <div className="empty-tiers">Loading…</div> :
-         error ? <div className="empty-tiers">Couldn’t load tiers.</div> :
-         (tiers||[]).map(t => {
-          const unavailable = (t.availableQuantity||0)<=0
-          return (
-            <div key={t.id}
-              className={`ticket-tier ${selectedTierId===t.id?'selected':''} ${unavailable?'disabled':''}`}
-              onClick={()=>!unavailable && onSelectTier(t.id)}>
-              <div className="tier-row">
-                <div className="tier-name">{t.name}</div>
-                <div className="tier-price">{fmtUSD(t.price)}</div>
-              </div>
-            </div>
-          )
-        })}
-
         {/* Quantity */}
-        <div className="ticket-quantity">
-          <label>Quantity</label>
-          <input type="number" min="1" max={maxQty} value={quantity}
-            onChange={e=>onQuantityChange(Math.min(maxQty,Math.max(1,parseInt(e.target.value||'1',10))))}/>
-        </div>
-
-        {/* Fees */}
-        {selectedTierId && (
-          <div className="fee-box">
-            {feeLoading ? <div className="fee-row muted">Calculating fees…</div> :
-              feeRows.map((r,i)=>(
-                <div key={i} className={`fee-row ${r.strong?'total':''}`}>
-                  <span>{r.label}</span><span>{r.value}</span>
-                </div>
-              ))
-            }
+        {tiers?.length>0 && (
+          <>
+          <div className="ticket-quantity">
+            <label>Quantity</label>
+            <input type="number" min="1" max={maxQty}
+              value={quantity}
+              onChange={e=>onQuantityChange(Math.min(maxQty,Math.max(1,parseInt(e.target.value||1))))}/>
           </div>
+          </>
         )}
 
-        {/* Payment method tabs */}
+        {/* Method tabs */}
         <div className="method-tabs">
           {showCard && <button className={`tab ${method==='card'?'active':''}`} onClick={()=>setMethod('card')}>Card</button>}
           {showPM && <button className={`tab ${method==='pagoMovil'?'active':''}`} onClick={()=>setMethod('pagoMovil')}>Pago Móvil</button>}
@@ -282,57 +190,51 @@ export default function RegisterPopup({
         {/* Manual details */}
         {method!=='card' && (
           <div className="alt-details">
-            {method==='pagoMovil' && showPM && (
-              <div className="alt-box">
-                {payments?.pagoMovil?.phone && <div>📱 {payments.pagoMovil.phone}</div>}
-                {payments?.pagoMovil?.ci && <div>🪪 CI: {payments.pagoMovil.ci}</div>}
-                {payments?.pagoMovil?.bank && <div>🏦 {payments.pagoMovil.bank}</div>}
-                <div className="alt-note">After paying, attach your receipt and press Pay.</div>
-              </div>
-            )}
-            {method==='zelle' && showZelle && (
-              <div className="alt-box">
-                {payments?.zelle?.email && <div>📧 {payments.zelle.email}</div>}
-                {payments?.zelle?.phone && <div>📞 {payments.zelle.phone}</div>}
-                <div className="alt-note">After sending your Zelle, attach receipt and press Pay.</div>
-              </div>
-            )}
-            {method==='cash' && showCash && (
-              <div className="alt-box">
-                {payments?.cash?.note && <div>📝 {payments.cash.note}</div>}
-                <div className="alt-note">Press Pay to notify organizer.</div>
-              </div>
-            )}
+            <div className="alt-box">
+              {method==='pagoMovil'&&(
+                <>
+                  {payments?.pagoMovil?.phone&&<div>📱 {payments.pagoMovil.phone}</div>}
+                  {payments?.pagoMovil?.bank&&<div>🏦 {payments.pagoMovil.bank}</div>}
+                  <div className="alt-note">After paying via Pago Móvil, attach a receipt and press Pay.</div>
+                </>
+              )}
+              {method==='zelle'&&(
+                <>
+                  {payments?.zelle?.email&&<div>📧 {payments.zelle.email}</div>}
+                  <div className="alt-note">After sending Zelle, attach a receipt and press Pay.</div>
+                </>
+              )}
+              {method==='cash'&&(
+                <>
+                  {payments?.cash?.note&&<div>📝 {payments.cash.note}</div>}
+                  <div className="alt-note">Press Pay to notify organizer you’ll pay in cash.</div>
+                </>
+              )}
+            </div>
 
-            {(method==='pagoMovil'||method==='zelle') && (
+            {(method==='zelle'||method==='pagoMovil')&&(
               <div className="receipt-upload">
-                {receiptPreview ? (
+                <label className="receipt-label">Upload Receipt (optional)</label>
+                <input type="file" accept="image/*" onChange={e=>setReceiptFile(e.target.files?.[0]||null)}/>
+                {receiptFile&&(
                   <div className="receipt-preview">
-                    <img src={receiptPreview} alt="Receipt" />
-                    <button onClick={removeReceipt} className="remove-receipt">✕</button>
+                    <img src={URL.createObjectURL(receiptFile)} alt="Receipt preview"/>
+                    <button className="remove-receipt" onClick={()=>setReceiptFile(null)}>×</button>
                   </div>
-                ) : (
-                  <label className="upload-btn">
-                    <input type="file" accept="image/*" onChange={handleReceiptChange} hidden />
-                    Attach Receipt
-                  </label>
                 )}
-                {receiptError && <div className="error-text">{receiptError}</div>}
               </div>
             )}
           </div>
         )}
 
-        {/* Pay button */}
-        <div className="pay-buttons">
-          <button className="buy-button" disabled={!canPay||uploading} onClick={handleConfirm}>
-            {uploading ? 'Processing…' : (method==='card'?'Pay with card':`Pay (${method})`)}
-          </button>
-          {method!=='card' && <p className="pay-hint">You’ll get your ticket after organizer confirmation.</p>}
-        </div>
-
-        {message && <div className="fee-hint" style={{marginTop:8}}>{message}</div>}
+        <button className="buy-button" disabled={!canPay} onClick={handleCheckout}>
+          {submitting?'Processing…':method==='card'?'Pay with card':`Pay (${method})`}
+        </button>
+        {method!=='card'&&<p className="pay-hint">Manual methods notify the organizer. You’ll get your ticket by email after confirmation.</p>}
       </div>
     </div>
+
+    {toast && <div className="toast-bubble">{toast}</div>}
+    </>
   )
 }
