@@ -133,3 +133,31 @@
 @media (max-width:360px){
   .tab{ flex:1 0 calc(50% - 6px) }
 }
+
+.receipt-upload {
+  margin-top: 12px;
+}
+
+.receipt-label {
+  display: block;
+  font-weight: 600;
+  margin-bottom: 4px;
+  color: #FFD966;
+}
+
+.receipt-upload input[type=file] {
+  width: 100%;
+  padding: 6px;
+  background: rgba(255,255,255,0.05);
+  border-radius: 8px;
+  border: 1px solid rgba(255,255,255,0.15);
+  color: #fff;
+}
+
+.receipt-preview img {
+  display: block;
+  margin-top: 8px;
+  border-radius: 8px;
+  border: 1px solid rgba(255,255,255,0.1);
+  max-width: 100%;
+}
