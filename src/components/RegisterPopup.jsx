@@ -18,12 +18,12 @@ export default function RegisterPopup({
   const [method, setMethod] = useState('card')
   const [fee, setFee] = useState(null)
   const [feeLoading, setFeeLoading] = useState(false)
-  const [feeHadError, setFeeHadError] = useState(false)
   const [bcvRate, setBcvRate] = useState(0)
-  const [bcvSource, setBcvSource] = useState('')
   const [token, setToken] = useState(getAccessToken())
   const [uploading, setUploading] = useState(false)
+  const [progress, setProgress] = useState(0)
   const [receiptUrl, setReceiptUrl] = useState(null)
+  const [ticketId, setTicketId] = useState(null)
 
   useEffect(()=>{
     const onAuth=()=>setToken(getAccessToken())
@@ -45,13 +45,12 @@ export default function RegisterPopup({
 
   // === BCV fetch ===
   useEffect(()=>{
-    let cancel=false
-    const readCacheFresh=()=>{
+    const readCache=()=>{
       const c=Number(localStorage.getItem(BCV_RATE_KEY)||0)
       const ts=Number(localStorage.getItem(BCV_TS_KEY)||0)
       const fresh=c>0&&Date.now()-ts<BCV_TTL_MS
-      if(fresh){setBcvRate(c);setBcvSource('cache')}
-      return fresh
+      if(fresh){setBcvRate(c);return true}
+      return false
     }
     const fetchLive=async()=>{
       try{
@@ -59,42 +58,44 @@ export default function RegisterPopup({
         if(!res.ok)return
         const j=await res.json()
         const r=Number(j?.vesPerUsd||0)
-        if(!cancel&&r>0){
+        if(r>0){
           setBcvRate(r)
-          setBcvSource(j?.overrideActive?'override':(j?.source||'bcv'))
           localStorage.setItem(BCV_RATE_KEY,String(r))
           localStorage.setItem(BCV_TS_KEY,String(Date.now()))
-          localStorage.setItem('ves_rate',String(r))
         }
       }catch{}
     }
-    readCacheFresh();fetchLive()
-    const id=setInterval(fetchLive,BCV_TTL_MS)
-    return()=>{cancel=true;clearInterval(id)}
+    readCache()||fetchLive()
   },[])
 
   // === Upload receipt ===
-  async function uploadReceipt(ticketId,file){
-    if(!file)return
+  async function uploadReceipt(file){
+    if(!file||!ticketId)return
     if(file.size>25*1024*1024){alert('File too large (max 25 MB)');return}
+    setUploading(true)
+    setProgress(0)
     try{
-      setUploading(true)
       const f=new FormData();f.append('file',file)
-      const res=await fetch(`${API}/api/tickets/${ticketId}/proof`,{
-        method:'POST',
-        headers:token?{Authorization:`Bearer ${token}`}:{},
-        body:f,
-      })
-      const data=await res.json()
-      if(res.ok&&data?.proofUrl){
-        setReceiptUrl(data.proofUrl)
-        alert('✅ Receipt uploaded successfully.')
-      }else alert(data?.error||'Upload failed.')
-    }catch(e){console.error(e);alert('Network error')}
-    finally{setUploading(false)}
+      const xhr=new XMLHttpRequest()
+      xhr.open('POST',`${API}/api/tickets/${ticketId}/proof`)
+      if(token)xhr.setRequestHeader('Authorization',`Bearer ${token}`)
+      xhr.upload.onprogress=e=>{
+        if(e.lengthComputable)setProgress(Math.round((e.loaded/e.total)*100))
+      }
+      xhr.onload=()=>{
+        setUploading(false)
+        if(xhr.status===200){
+          const data=JSON.parse(xhr.responseText)
+          setReceiptUrl(data.proofUrl)
+          alert('✅ Receipt uploaded successfully.')
+        }else alert('Upload failed')
+      }
+      xhr.onerror=()=>{setUploading(false);alert('Upload error')}
+      xhr.send(f)
+    }catch{setUploading(false);alert('Network error')}
   }
 
-  // === Rate & formatting ===
+  // === Fees ===
   const useVES=method==='pagoMovil'
   const vesRate=bcvRate||ENV_VES_RATE||LS_VES_RATE||FALLBACK_VES_RATE
   const fmtUSD=x=>`$${Number(x||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}`
@@ -104,7 +105,6 @@ export default function RegisterPopup({
     return useVES?fmtVES(usd*vesRate):fmtUSD(usd)
   }
 
-  // === Fee quote ===
   useEffect(()=>{
     if(!eventId||!selectedTierId||quantity<1)return
     let cancel=false
@@ -112,13 +112,10 @@ export default function RegisterPopup({
       try{
         setFeeLoading(true)
         const q=new URLSearchParams({eventId,ticketTierId:selectedTierId,quantity,paymentMethod:method})
-        const url=`${API}/api/tickets/quote?${q}`
-        const res=await fetchWithAuth(url,{method:'GET'})
-        if(!res.ok)throw new Error()
+        const res=await fetchWithAuth(`${API}/api/tickets/quote?${q}`,{method:'GET'})
         const data=await res.json()
         if(!cancel)setFee(data)
-      }catch{if(!cancel)setFeeHadError(true)}
-      finally{if(!cancel)setFeeLoading(false)}
+      }catch{}finally{if(!cancel)setFeeLoading(false)}
     }
     load()
     return()=>{cancel=true}
@@ -126,55 +123,69 @@ export default function RegisterPopup({
 
   const selectedTier=(tiers||[]).find(t=>t?.id===selectedTierId)
   const canPay=!!selectedTierId&&!submitting
+
   const feeRows=useMemo(()=>{
+    if(!fee)return[]
     const rows=[]
-    if(fee&&typeof fee.totalCents==='number'){
-      rows.push({label:`${selectedTier?.name||'Subtotal'} ×${quantity}`,value:fmtCents(fee.subtotalCents)})
-      if(fee.serviceFeeCents>0)rows.push({label:'Service fee',value:fmtCents(fee.serviceFeeCents)})
-      if(fee.stripeFeeCents>0&&method==='card')rows.push({label:'Stripe fee',value:fmtCents(fee.stripeFeeCents)})
-      rows.push({label:'Total',value:fmtCents(fee.totalCents),strong:true})
-    }
+    rows.push({label:`${selectedTier?.name||'Subtotal'} ×${quantity}`,value:fmtCents(fee.subtotalCents)})
+    if(fee.serviceFeeCents>0)rows.push({label:'Service fee',value:fmtCents(fee.serviceFeeCents)})
+    if(fee.stripeFeeCents>0&&method==='card')rows.push({label:'Stripe fee',value:fmtCents(fee.stripeFeeCents)})
+    rows.push({label:'Total',value:fmtCents(fee.totalCents),strong:true})
     return rows
   },[fee,selectedTier,quantity,method,vesRate])
 
-  const handleConfirm=()=>{
-    if(method!=='card'&&!receiptUrl&&!window.confirm('No receipt uploaded. Continue?'))return
-    onPay?.(method)
+  // === Checkout ===
+  const handleConfirm=async()=>{
+    try{
+      const res=await fetchWithAuth(`${API}/api/tickets/checkout`,{
+        method:'POST',
+        body:JSON.stringify({
+          eventId,
+          ticketTierId:selectedTierId,
+          quantity,
+          email:localStorage.getItem('user_email'),
+          paymentMethod:method
+        })
+      })
+      const data=await res.json()
+      if(!res.ok)throw new Error(data?.error||'Checkout failed')
+      if(data?.ticketId)setTicketId(data.ticketId)
+      if(method==='card'){
+        onPay?.('card',data)
+      }else{
+        alert('✅ Payment recorded. Upload your receipt below.')
+      }
+    }catch(e){alert(e.message||'Error during checkout')}
   }
 
-  // === UI ===
   return(
     <div className="popup-overlay"onClick={onClose}>
       <div className="popup-modal"onClick={e=>e.stopPropagation()}>
         <h3>Select Your Ticket</h3>
 
-        {/* Tiers */}
         {tiers?.length ? (
-          tiers.slice().sort((a,b)=>(a.tierOrder??0)-(b.tierOrder??0)).map(tier=>{
-            const selected=selectedTierId===tier.id
+          tiers.map(t=>{
+            const selected=selectedTierId===t.id
             return(
-              <div key={tier.id}
+              <div key={t.id}
                 className={`ticket-tier rich ${selected?'selected':''}`}
-                onClick={()=>onSelectTier(tier.id)}
-              >
+                onClick={()=>onSelectTier(t.id)}>
                 <div className="tier-row">
-                  <div className="tier-name">{tier.name}</div>
-                  <div className="tier-price">{fmtUSD(tier.price)}</div>
+                  <div className="tier-name">{t.name}</div>
+                  <div className="tier-price">{fmtUSD(t.price)}</div>
                 </div>
-                {tier.description&&<div className="tier-desc">{tier.description}</div>}
+                {t.description&&<div className="tier-desc">{t.description}</div>}
               </div>
             )
           })
         ):<div>No tiers</div>}
 
-        {/* Quantity */}
         <div className="ticket-quantity">
           <label>Quantity</label>
           <input type="number"min="1"max="10"value={quantity}
             onChange={e=>onQuantityChange(Math.max(1,Math.min(10,Number(e.target.value)||1)))}/>
         </div>
 
-        {/* Fees */}
         {selectedTierId&&quantity>=1&&(
           <div className="fee-box">
             {feeLoading?<div className="fee-row muted">Calculating fees…</div>:
@@ -186,7 +197,6 @@ export default function RegisterPopup({
           </div>
         )}
 
-        {/* Payment methods */}
         <div className="method-tabs">
           {showCard&&<button className={`tab ${method==='card'?'active':''}`}onClick={()=>setMethod('card')}>Card</button>}
           {showPM&&<button className={`tab ${method==='pagoMovil'?'active':''}`}onClick={()=>setMethod('pagoMovil')}>Pago Móvil</button>}
@@ -194,7 +204,7 @@ export default function RegisterPopup({
           {showCash&&<button className={`tab ${method==='cash'?'active':''}`}onClick={()=>setMethod('cash')}>Cash</button>}
         </div>
 
-        {/* Alt methods */}
+        {/* Alternate methods */}
         {method!=='card'&&(
           <div className="alt-details">
             {method==='pagoMovil'&&showPM&&(
@@ -202,42 +212,29 @@ export default function RegisterPopup({
                 <div>📱 {payments?.pagoMovil?.phone}</div>
                 <div>🪪 CI: {payments?.pagoMovil?.ci}</div>
                 <div>🏦 {payments?.pagoMovil?.bank}</div>
-                <label className="receipt-label">Upload receipt (image)</label>
-                <input type="file"accept="image/*"disabled={uploading}
-                  onChange={e=>uploadReceipt(selectedTierId,e.target.files?.[0])}/>
-                {uploading&&<div className="fee-hint">Uploading…</div>}
-                {receiptUrl&&<img src={receiptUrl}alt="receipt"style={{marginTop:'8px',maxWidth:'100%',borderRadius:'6px'}}/>}
               </div>
             )}
-            {method==='zelle'&&showZelle&&(
-              <div className="alt-box">
-                <div>📧 {payments?.zelle?.email}</div>
+            {method==='zelle'&&showZelle&&<div className="alt-box">📧 {payments?.zelle?.email}</div>}
+            {method==='cash'&&showCash&&<div className="alt-box">📝 {payments?.cash?.note}</div>}
+
+            {ticketId&&(
+              <>
                 <label className="receipt-label">Upload receipt (image)</label>
                 <input type="file"accept="image/*"disabled={uploading}
-                  onChange={e=>uploadReceipt(selectedTierId,e.target.files?.[0])}/>
-                {uploading&&<div className="fee-hint">Uploading…</div>}
-                {receiptUrl&&<img src={receiptUrl}alt="receipt"style={{marginTop:'8px',maxWidth:'100%',borderRadius:'6px'}}/>}
-              </div>
-            )}
-            {method==='cash'&&showCash&&(
-              <div className="alt-box">
-                <div>📝 {payments?.cash?.note}</div>
-                <label className="receipt-label">Upload receipt (optional)</label>
-                <input type="file"accept="image/*"disabled={uploading}
-                  onChange={e=>uploadReceipt(selectedTierId,e.target.files?.[0])}/>
-                {uploading&&<div className="fee-hint">Uploading…</div>}
-                {receiptUrl&&<img src={receiptUrl}alt="receipt"style={{marginTop:'8px',maxWidth:'100%',borderRadius:'6px'}}/>}
-              </div>
+                  onChange={e=>uploadReceipt(e.target.files?.[0])}/>
+                {uploading&&<div className="fee-hint">Uploading… {progress}%</div>}
+                {receiptUrl&&<img src={receiptUrl}alt="receipt"
+                  style={{marginTop:'8px',maxWidth:'100%',borderRadius:'6px'}}/>}
+              </>
             )}
           </div>
         )}
 
         <div className="pay-buttons">
           <button className="buy-button"disabled={!canPay}onClick={handleConfirm}>
-            {submitting?(method==='card'?'Processing…':'Sending…')
-              :(method==='card'?'Pay with card':`Pay (${method})`)}
+            {submitting?'Processing…':`Pay (${method})`}
           </button>
-          {method!=='card'&&<p className="pay-hint">Manual methods notify organizer; you’ll receive your ticket once approved.</p>}
+          {method!=='card'&&<p className="pay-hint">Organizer will confirm your receipt to issue ticket.</p>}
         </div>
       </div>
     </div>
