@@ -1,3 +1,4 @@
+// pages/SuccessPage.jsx
 import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import WebTicketCard from '../components/WebTicketCard';
@@ -68,6 +69,7 @@ export default function SuccessPage() {
 
   const fetchForEvent = async () => {
     if (!email) throw new Error('Missing email');
+    // Public endpoint (also works with token if present)
     const res = await fetch(`${API}/api/tickets/my?email=${encodeURIComponent(email)}`, {
       headers: token ? { Authorization: `Bearer ${token}` } : {},
     });

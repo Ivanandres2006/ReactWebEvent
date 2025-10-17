@@ -1,4 +1,4 @@
-// RegisterPopup.jsx
+// components/RegisterPopup.jsx
 import React, { useMemo, useState, useEffect } from 'react'
 import './RegisterPopup.css'
 import { fetchWithAuth, getAccessToken } from '../lib/authClient'
@@ -19,7 +19,6 @@ export default function RegisterPopup({
   eventId, tiers, loading=false, error=null,
   selectedTierId, quantity, submitting=false, payments=null,
   onClose, onSelectTier, onQuantityChange,
-  // 🔻 allow parent to receive extras (receipt/discount)
   onPay,
 }) {
   const [method, setMethod] = useState('card')
@@ -28,17 +27,17 @@ export default function RegisterPopup({
   const [feeLoading, setFeeLoading] = useState(false)
   const [feeHadError, setFeeHadError] = useState(false)
 
-  // ==== 🔻 discount code state (mirrors iOS) ====
+  // Discount state
   const [discountCode, setDiscountCode] = useState('')
   const [discountMessage, setDiscountMessage] = useState(null)
   const [lastAppliedCode, setLastAppliedCode] = useState(null)
 
-  // ==== 🔻 receipt state (for manual methods) ====
+  // Receipt state (manual methods)
   const [receiptFile, setReceiptFile] = useState(null)
   const [receiptPreview, setReceiptPreview] = useState('')
   const [receiptError, setReceiptError] = useState('')
 
-  // ==== Live BCV state (preferred source for Pago Móvil) ====
+  // Live BCV
   const [bcvRate, setBcvRate] = useState(0)
   const [bcvSource, setBcvSource] = useState('') // 'override' | 'bcv' | 'cache' | ''
 
@@ -50,12 +49,12 @@ export default function RegisterPopup({
     return () => window.removeEventListener('auth:login', onAuth)
   }, [])
 
-  // 🔻 clean up object URL for preview
+  // clean preview URL
   useEffect(() => {
     return () => { if (receiptPreview) URL.revokeObjectURL(receiptPreview) }
   }, [receiptPreview])
 
-  // ===== Detect Venezuela -> hide Card =====
+  // Detect Venezuela -> hide Card
   const isVenezuela = useMemo(() => {
     const country  = String(payments?.country || payments?.pagoMovil?.country || '').toLowerCase()
     const currency = String(payments?.currency || '').toUpperCase()
@@ -68,7 +67,7 @@ export default function RegisterPopup({
   const showCash  = !!payments?.cash?.enabled
   const showCard  = !isVenezuela
 
-  // ==== Fetch BCV on mount; refresh every 30 minutes; also on focus; react to storage ====
+  // Fetch BCV live
   useEffect(() => {
     let cancelled = false
     let intervalId
@@ -101,16 +100,12 @@ export default function RegisterPopup({
           setBcvSource(json?.overrideActive ? 'override' : (json?.source || 'bcv'))
           localStorage.setItem(BCV_RATE_KEY, String(rate))
           localStorage.setItem(BCV_TS_KEY, String(Date.now()))
-          // legacy key compatibility
-          localStorage.setItem('ves_rate', String(rate))
+          localStorage.setItem('ves_rate', String(rate)) // legacy compat
         }
-      } catch { /* ignore; UI will use fallbacks */ }
+      } catch { /* ignore */ }
     }
 
-    // on focus, refresh
     const onFocus = () => { fetchLive() }
-
-    // from other tabs (e.g., admin)
     const onStorage = (e) => {
       if (e.key === BCV_RATE_KEY && e.newValue) {
         const n = Number(e.newValue)
@@ -121,7 +116,6 @@ export default function RegisterPopup({
       }
     }
 
-    // Try cache (if good) then ALWAYS fetch to refresh
     readCacheFresh()
     fetchLive()
     intervalId = window.setInterval(fetchLive, BCV_TTL_MS)
@@ -136,7 +130,7 @@ export default function RegisterPopup({
     }
   }, [])
 
-  // If Card is hidden but selected, auto-switch to another available method
+  // Auto-switch off card in VE
   useEffect(() => {
     if (!showCard && method === 'card') {
       if (showPM) setMethod('pagoMovil')
@@ -145,10 +139,9 @@ export default function RegisterPopup({
     }
   }, [showCard, showPM, showZelle, showCash, method])
 
-  // ===== Currency / formatting
+  // Currency helpers
   const useVES = method === 'pagoMovil'
 
-  // 🔑 Priority: for Pago Móvil use the freshest live BCV; for others use fee.fx first.
   const incomingRate = useMemo(() => {
     if (method === 'pagoMovil') {
       if (Number.isFinite(bcvRate) && bcvRate > 0) return bcvRate
@@ -159,10 +152,8 @@ export default function RegisterPopup({
       if (Number.isFinite(fromFee) && fromFee > 0) return fromFee
       if (Number.isFinite(bcvRate) && bcvRate > 0) return bcvRate
     }
-
     const organizer = payments?.pagoMovil && Number(payments.pagoMovil.rate)
     if (Number.isFinite(organizer) && organizer > 0) return organizer
-
     if (ENV_VES_RATE > 0) return ENV_VES_RATE
     if (LS_VES_RATE  > 0) return LS_VES_RATE
     return FALLBACK_VES_RATE
@@ -199,7 +190,7 @@ export default function RegisterPopup({
          .filter(Boolean)
     )]
 
-  // ===== Availability helpers
+  // Availability helpers
   const isSoldOut = t => Number(t?.availableQuantity ?? 0) <= 0
   const hasNotStarted = (t, now) => (t?.startTime ? now < new Date(t.startTime) : false)
   const hasEnded = (t, now) => (t?.endTime ? now > new Date(t.endTime) : false)
@@ -224,7 +215,7 @@ export default function RegisterPopup({
   const hasWindow = (t) => !!t?.startTime && !!t?.endTime
   const fmtWindow = (t) => {
     const s = t?.startTime ? new Date(t.startTime) : null
-    const e = t?.endTime ? new Date(t.endTime) : null
+       const e = t?.endTime ? new Date(t.endTime) : null
     const opts = { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }
     return s && e ? `${s.toLocaleString(undefined, opts)} – ${e.toLocaleString(undefined, opts)}` : ''
   }
@@ -256,7 +247,7 @@ export default function RegisterPopup({
     [selectedTier]
   )
 
-  // 🔻 require receipt for these
+  // require receipt for these
   const needsReceipt = method === 'zelle' || method === 'pagoMovil'
 
   const canPay =
@@ -274,11 +265,10 @@ export default function RegisterPopup({
       setReceiptError('Please attach the receipt image.')
       return
     }
-    // 🔻 pass extras upward; extra args are harmless if parent ignores them
     onPay?.(method, { discountCode: discountCode.trim() || null, receiptFile: receiptFile || null })
   }
 
-  // ===== Fee quote fetch (auth + retry-once logic)
+  // Fee quote fetch (auth + retry-once logic)
   useEffect(() => {
     setFeeHadError(false)
     if (!eventId || !selectedTierId || quantity < 1) {
@@ -292,7 +282,7 @@ export default function RegisterPopup({
       try {
         setFeeLoading(true)
         const sel = (tiers || []).find(t => t?.id === selectedTierId)
-        const unitPriceCents = Math.round(Number(sel?.price || 0) * 100) // 🔻 send unit price like iOS
+        const unitPriceCents = Math.round(Number(sel?.price || 0) * 100) // send unit price like iOS
 
         const params = new URLSearchParams({
           eventId: String(eventId),
@@ -305,7 +295,6 @@ export default function RegisterPopup({
 
         const url = `${API}/api/tickets/quote?${params.toString()}`
         let res = await fetchWithAuth(url, { method: 'GET', signal: controller.signal })
-        // If still not ok and endpoint allows public quoting, try without auth:
         if (!res.ok && res.status !== 401) {
           res = await fetch(url, { method: 'GET', signal: controller.signal })
         }
@@ -313,7 +302,6 @@ export default function RegisterPopup({
         const data = await res.json()
         if (!cancelled) {
           setFee(data || null)
-          // 🔻 surface discount/status text from backend (mirrors iOS)
           setDiscountMessage(data?.discountMessage || null)
           setLastAppliedCode(data?.discountCodeApplied || null)
         }
@@ -325,10 +313,10 @@ export default function RegisterPopup({
     }
     fetchFee()
     return () => { cancelled = true; controller.abort() }
-    // 🔁 Re-quote automatically when the *effective* FX for Pago Móvil changes
+    // Re-quote when effective FX changes for Pago Móvil
   }, [eventId, selectedTierId, quantity, method, token, discountCode, (method === 'pagoMovil' ? bcvRate : undefined)])
 
-  // ===== Fee rows (expanded w/ discount + platform fee)
+  // Fee rows (with discount + platform fee)
   const feeRows = useMemo(() => {
     const rows = []
     const hasLive = !!fee && typeof fee.totalCents === 'number'
@@ -337,7 +325,6 @@ export default function RegisterPopup({
     if (hasLive) {
       const qtyText = selectedTier ? `${selectedTier.name} ×${quantity}` : 'Subtotal'
 
-      // 🔻 if backend sends original + discount, show both
       if (typeof fee.originalSubtotalCents === 'number' && fee.originalSubtotalCents > 0 &&
           typeof fee.discountCentsApplied === 'number' && fee.discountCentsApplied > 0) {
         rows.push({ label: `${qtyText} (subtotal)`, value: fmtCents(fee.originalSubtotalCents), strong: false })
@@ -371,7 +358,7 @@ export default function RegisterPopup({
     return { rows, isEstimate: true }
   }, [fee, selectedTier, quantity, method, useVES, vesRate, lastAppliedCode, discountCode])
 
-  // 🔻 local handlers for receipt selection/removal
+  // Receipt selection/removal
   const onReceiptPick = (file) => {
     if (!file) return
     if (!file.type.startsWith('image/')) {
@@ -442,7 +429,7 @@ export default function RegisterPopup({
           />
         </div>
 
-        {/* 🔻 Discount code */}
+        {/* Discount code */}
         <div className="ticket-quantity" style={{marginTop:8}}>
           <label>Discount</label>
           <div style={{display:'flex', gap:8, width:'100%'}}>
@@ -453,14 +440,18 @@ export default function RegisterPopup({
               onChange={e=>setDiscountCode(e.target.value)}
               style={{flex:1}}
             />
-            <button className="tab" onClick={()=>{ setDiscountCode(discountCode.trim().toUpperCase()); }}>
-              Type
-            </button>
-            <button className="tab" onClick={()=>{ /* apply via fee effect which depends on discountCode */ }}>
+            <button
+              className="tab"
+              disabled={!discountCode.trim()}
+              onClick={()=> setDiscountCode(discountCode.trim().toUpperCase())}
+            >
               Apply
             </button>
-            {discountCode && (
-              <button className="tab" onClick={()=>{ setDiscountCode(''); setLastAppliedCode(null); setDiscountMessage(null); }}>
+            {!!discountCode && (
+              <button
+                className="tab"
+                onClick={()=>{ setDiscountCode(''); setLastAppliedCode(null); setDiscountMessage(null); }}
+              >
                 Clear
               </button>
             )}
@@ -553,7 +544,7 @@ export default function RegisterPopup({
               </div>
             )}
 
-            {/* 🔻 Receipt uploader shown for Zelle/Pago Móvil */}
+            {/* Receipt uploader (Zelle/Pago Móvil) */}
             {(method === 'zelle' || method === 'pagoMovil') && (
               <div className="receipt-upload">
                 <label className="receipt-label">Attach receipt (image)</label>
