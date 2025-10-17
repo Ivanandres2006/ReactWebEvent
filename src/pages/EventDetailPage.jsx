@@ -167,64 +167,110 @@ export default function EventDetailPage() {
     },
   } : null
 
-  // Handle checkout
-  const handleBuy = async (method = 'card') => {
-    if (checkingOut || clickedOnceRef.current) return
-    clickedOnceRef.current = true
-    setCheckingOut(true)
-
+  async function uploadProof(ticketId, file, token) {
+    const fd = new FormData();
+    fd.append('file', file, file.name || 'receipt.jpg'); // field name MUST be "file"
+  
     try {
-      if (!isLoggedIn) { setShowAuth(true); return }
-      if (!email) { alert('Email not available. Please log in again.'); setShowAuth(true); return }
-      if (!selectedTierId) { alert('Please select a ticket tier'); return }
-
-      const storedRef = localStorage.getItem('wknd_ref')
-      const body = {
-        eventId: parseInt(id),
-        ticketTierId: selectedTierId,
-        quantity,
-        email,
-        ref: refCode || storedRef || null,
-        paymentMethod: typeof method === 'string' ? method : 'card',
-      }
-
-      const res = await fetchWithAuth(`${API}/api/tickets/checkout`, {
+      const res = await fetch(`${API}/api/tickets/${ticketId}/proof`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      })
-
-      const data = await res.json()
-
-      if (data.free === true || data.free === 'true') {
-        window.location.href = `/#/success?eventId=${id}`
-        return
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        body: fd, // let the browser set Content-Type boundary
+      });
+      if (!res.ok) {
+        const txt = await res.text().catch(() => '');
+        console.warn(`Receipt upload failed for #${ticketId}: ${res.status} ${txt}`);
+        return false;
       }
-
-      if (data.manual === true) {
-        setShowPopup(false)
-        const methodLower = String(method || 'card').toLowerCase()
-        const since = Date.now()
-        window.location.href =
-          `/#/success?eventId=${id}&pending=${encodeURIComponent(methodLower)}&since=${since}`
-        return
-      }
-
-      if (data.clientSecret) {
-        setClientSecret(data.clientSecret)
-        setShowPopup(false)
-        return
-      }
-
-      alert(data.error || 'Unexpected server response')
-    } catch (err) {
-      console.error('❌ Checkout failed:', err)
-      alert('Checkout error. Try again.')
-    } finally {
-      setCheckingOut(false)
-      clickedOnceRef.current = false
+      return true;
+    } catch (e) {
+      console.warn(`Receipt upload error for #${ticketId}:`, e);
+      return false;
     }
+  }  
+
+  // Handle checkout
+const handleBuy = async (method = 'card', extras = {}) => {
+  if (checkingOut || clickedOnceRef.current) return;
+  clickedOnceRef.current = true;
+  setCheckingOut(true);
+
+  try {
+    if (!isLoggedIn) { setShowAuth(true); return; }
+    if (!email) { alert('Email not available. Please log in again.'); setShowAuth(true); return; }
+    if (!selectedTierId) { alert('Please select a ticket tier'); return; }
+
+    const storedRef = localStorage.getItem('wknd_ref');
+    const body = {
+      eventId: parseInt(id),
+      ticketTierId: selectedTierId,
+      quantity,
+      email,
+      ref: refCode || storedRef || null,
+      paymentMethod: typeof method === 'string' ? method : 'card',
+    };
+
+    // NEW: push discount code if present
+    if (extras?.discountCode) {
+      body.discountCode = String(extras.discountCode).trim().toUpperCase();
+    }
+
+    const res = await fetchWithAuth(`${API}/api/tickets/checkout`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+
+    const data = await res.json();
+
+    // Free flow
+    if (data.free === true || data.free === 'true') {
+      window.location.href = `/#/success?eventId=${id}`;
+      return;
+    }
+
+    // Manual flow (Zelle / Pago Móvil / Cash)
+    if (data.manual === true) {
+      // collect ticket IDs
+      const ids = Array.isArray(data.ticketIds) && data.ticketIds.length
+        ? data.ticketIds
+        : (data.ticketId != null ? [data.ticketId] : []);
+
+      // upload receipt to ALL tickets if provided
+      const file = extras?.receiptFile;
+      if (file && ids.length > 0) {
+        try {
+          await Promise.all(ids.map(tid => uploadProof(tid, file, token)));
+        } catch (e) {
+          console.warn('One or more receipt uploads failed:', e);
+        }
+      }
+
+      // go to success/pending
+      setShowPopup(false);
+      const methodLower = String(method || 'card').toLowerCase();
+      const since = Date.now();
+      window.location.href =
+        `/#/success?eventId=${id}&pending=${encodeURIComponent(methodLower)}&since=${since}`;
+      return;
+    }
+
+    // Card flow
+    if (data.clientSecret) {
+      setClientSecret(data.clientSecret);
+      setShowPopup(false);
+      return;
+    }
+
+    alert(data.error || 'Unexpected server response');
+  } catch (err) {
+    console.error('❌ Checkout failed:', err);
+    alert('Checkout error. Try again.');
+  } finally {
+    setCheckingOut(false);
+    clickedOnceRef.current = false;
   }
+};
 
   if (showAuth && !isLoggedIn) {
     return (
@@ -366,7 +412,7 @@ export default function EventDetailPage() {
             try { localStorage.setItem(`lastTier:${id}`, String(tierId)) } catch {}
           }}
           onQuantityChange={setQuantity}
-          onPay={(method) => handleBuy(method ?? 'card')}
+          onPay={(method, extras) => handleBuy(method ?? 'card', extras)}
         />
       )}
 
