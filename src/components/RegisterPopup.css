@@ -29,45 +29,6 @@
   to { transform: scale(1); opacity: 1; }
 }
 
-/* Header + Apple Wallet CTA */
-.popup-header{
-  display:flex;
-  align-items:center;
-  justify-content:space-between;
-  gap:12px;
-}
-.wallet-cta{
-  display:inline-flex; align-items:center; gap:6px;
-  background:#111; color:#fff; border:1px solid #222;
-  padding:8px 10px; border-radius:10px; font-weight:700; font-size:13px;
-  box-shadow: inset 0 -2px 0 rgba(0,0,0,.12);
-}
-.wallet-cta:hover{ box-shadow: 0 3px 14px rgba(0,0,0,.35); }
-
-/* Waitlist block */
-.waitlist-block{
-  margin-top:8px;
-  background: rgba(255,255,255,.06);
-  border:1px solid rgba(255,255,255,.1);
-  border-radius:14px;
-  padding:14px;
-}
-.wl-status{ display:flex; gap:8px; margin-bottom:8px; }
-.wl-copy{ color: rgba(255,255,255,.85); margin: 4px 0 8px; }
-.wl-close{ background:#222; color:#fff; }
-
-/* Chips */
-.chip {
-  font-size: 12px;
-  padding: 4px 8px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, .08);
-}
-.chip.warn { background: rgba(255, 165, 0, .22); }
-.chip.light { background: rgba(255, 255, 255, .06); }
-.chip.bad  { background: rgba(255, 77, 77, .18); }
-.chip.info { background: rgba(255,255,255,.12); }
-
 /* === Tier cards === */
 .ticket-tier {
   background: #111729;
@@ -132,6 +93,16 @@
   gap: 6px;
   margin-top: 6px;
 }
+
+.chip {
+  font-size: 12px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .08);
+}
+
+.chip.warn { background: rgba(255, 165, 0, .22); }
+.chip.light { background: rgba(255, 255, 255, .06); }
 
 /* === Quantity === */
 .ticket-quantity {
