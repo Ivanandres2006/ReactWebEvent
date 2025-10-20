@@ -1,5 +1,5 @@
 import { useParams, useSearchParams } from 'react-router-dom'
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState, useRef, useMemo } from 'react'
 import { loadStripe } from '@stripe/stripe-js'
 import { Elements } from '@stripe/react-stripe-js'
 import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet'
@@ -26,6 +26,26 @@ L.Icon.Default.mergeOptions({
 const stripePromise = loadStripe('pk_test_51RcVeBBU1Fa59mBKHvngFVDwq8gBiZ863TKO6okEHBj28VjLiYAUQ5OhDs0k1WEyfqXRmtziurmLYBqlQfyOOl6C007EKiWppc')
 const API = 'https://backendevent-etce.onrender.com'
 
+// ---------- Apple detection & Wallet helpers ----------
+const isApplePlatform = () => {
+  const ua = navigator.userAgent || ''
+  return /iPhone|iPad|iPod|Macintosh/.test(ua)
+}
+const canShowAppleWallet = () => isApplePlatform()
+const PASS_URL_FOR_EVENT = (eventId) => `${API}/api/passes/event/${encodeURIComponent(eventId)}`
+
+// ---------- Pretty date ----------
+function formatDate(isoString) {
+  const date = new Date(isoString)
+  return date.toLocaleString('en-US', {
+    weekday: 'long',
+    month: 'long',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  })
+}
+
 export default function EventDetailPage() {
   const { id } = useParams()
   const [searchParams] = useSearchParams()
@@ -50,14 +70,25 @@ export default function EventDetailPage() {
   const [checkingOut, setCheckingOut] = useState(false)
   const clickedOnceRef = useRef(false)
 
+  // Waitlist (listOnly)
+  const [waitlistStatus, setWaitlistStatus] = useState(null) // null | "pending" | "approved" | "denied"
+  const [waitlistModal, setWaitlistModal] = useState(false)
+  const [waitlistBusy, setWaitlistBusy] = useState(false)
+
   const token = getAccessToken()
   const isLoggedIn = !!token
 
+  const requiresWaitlist = !!(event?.listOnly)
+
+  // ---- Apple Wallet visibility
+  const showAppleWallet = useMemo(() => canShowAppleWallet() && isLoggedIn, [isLoggedIn])
+
+  // save referral
   useEffect(() => {
     if (refCode) localStorage.setItem('wknd_ref', refCode)
   }, [refCode])
 
-  // Load user email (uses refresh/retry)
+  // Load user info
   useEffect(() => {
     if (!isLoggedIn) return
     fetchWithAuth(`${API}/user/me`)
@@ -70,6 +101,7 @@ export default function EventDetailPage() {
         if (d?.email) {
           setEmail(d.email)
           localStorage.setItem('email', d.email)
+          if (d?.fullName) localStorage.setItem('fullName', d.fullName)
         } else {
           setShowAuth(true)
         }
@@ -94,7 +126,26 @@ export default function EventDetailPage() {
     })()
   }, [id])
 
-  // Load tiers when popup opens (try auth, fall back to public)
+  // Load waitlist status (if listOnly + logged in)
+  useEffect(() => {
+    if (!event?.listOnly || !isLoggedIn) return
+    ;(async () => {
+      try {
+        const res = await fetchWithAuth(`${API}/events/${id}/waitlist/status`)
+        if (!res.ok) { setWaitlistStatus(null); return }
+        const text = await res.text()
+        if (!text || text === 'null') { setWaitlistStatus(null); return }
+        let payload = null
+        try { payload = JSON.parse(text) } catch {}
+        const status = payload?.status || (typeof text === 'string' ? text : null)
+        setWaitlistStatus(String(status || '').toLowerCase() || null)
+      } catch {
+        setWaitlistStatus(null)
+      }
+    })()
+  }, [event?.listOnly, isLoggedIn, id])
+
+  // Load tiers when popup opens (auth first)
   useEffect(() => {
     if (!showPopup || !id) return
     const lsKey = `lastTier:${id}`
@@ -140,13 +191,15 @@ export default function EventDetailPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showPopup, id])
 
-  // ---- VES rate candidates
+  // ---- VES rate in event
   const vesRate =
     event?.vesRate ?? event?.ves_rate ?? event?.vesPerUsd ?? event?.ves_per_usd ??
     event?.fxVesPerUsd ?? event?.exchangeRateVes ?? event?.exchange_rate_ves ?? null
 
-  // Build dynamic payment options for the popup
+  // Build payment options for popup
   const payments = event ? {
+    country: event.country || '',
+    currency: event.currency || '',
     zelle: {
       enabled: !!(event.zelleEmail || event.zellePhone),
       email: event.zelleEmail || '',
@@ -160,6 +213,7 @@ export default function EventDetailPage() {
       ci: event.pagoMovilCi || '',
       bank: event.pagoMovilBank || '',
       rate: typeof vesRate === 'number' ? vesRate : undefined, // VES per 1 USD
+      country: event.country || ''
     },
     cash: {
       enabled: !!event.allowCash,
@@ -168,109 +222,161 @@ export default function EventDetailPage() {
   } : null
 
   async function uploadProof(ticketId, file, token) {
-    const fd = new FormData();
-    fd.append('file', file, file.name || 'receipt.jpg'); // field name MUST be "file"
-  
+    const fd = new FormData()
+    fd.append('file', file, file.name || 'receipt.jpg') // field name MUST be "file"
     try {
       const res = await fetch(`${API}/api/tickets/${ticketId}/proof`, {
         method: 'POST',
         headers: token ? { Authorization: `Bearer ${token}` } : {},
-        body: fd, // let the browser set Content-Type boundary
-      });
+        body: fd,
+      })
       if (!res.ok) {
-        const txt = await res.text().catch(() => '');
-        console.warn(`Receipt upload failed for #${ticketId}: ${res.status} ${txt}`);
-        return false;
+        const txt = await res.text().catch(() => '')
+        console.warn(`Receipt upload failed for #${ticketId}: ${res.status} ${txt}`)
+        return false
       }
-      return true;
+      return true
     } catch (e) {
-      console.warn(`Receipt upload error for #${ticketId}:`, e);
-      return false;
+      console.warn(`Receipt upload error for #${ticketId}:`, e)
+      return false
     }
-  }  
+  }
+
+  // ---- Waitlist actions
+  const openWaitlistModal = () => setWaitlistModal(true)
+  const closeWaitlistModal = () => setWaitlistModal(false)
+
+  const requestWaitlistAccess = async () => {
+    if (!isLoggedIn) { setShowAuth(true); return }
+    try {
+      setWaitlistBusy(true)
+      const name = localStorage.getItem('fullName') || 'AnonymousUser'
+      const res = await fetchWithAuth(`${API}/events/${id}/waitlist/request`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: `fullName=${encodeURIComponent(name)}`
+      })
+      if (res.ok) {
+        setWaitlistStatus('pending')
+      } else {
+        const t = await res.text().catch(()=> '')
+        alert(t || 'Could not submit request right now.')
+      }
+    } finally {
+      setWaitlistBusy(false)
+    }
+  }
 
   // Handle checkout
-const handleBuy = async (method = 'card', extras = {}) => {
-  if (checkingOut || clickedOnceRef.current) return;
-  clickedOnceRef.current = true;
-  setCheckingOut(true);
+  const handleBuy = async (method = 'card', extras = {}) => {
+    if (checkingOut || clickedOnceRef.current) return
+    clickedOnceRef.current = true
+    setCheckingOut(true)
 
-  try {
-    if (!isLoggedIn) { setShowAuth(true); return; }
-    if (!email) { alert('Email not available. Please log in again.'); setShowAuth(true); return; }
-    if (!selectedTierId) { alert('Please select a ticket tier'); return; }
+    try {
+      if (!isLoggedIn) { setShowAuth(true); return }
+      if (!email) { alert('Email not available. Please log in again.'); setShowAuth(true); return }
+      if (!selectedTierId) { alert('Please select a ticket tier'); return }
 
-    const storedRef = localStorage.getItem('wknd_ref');
-    const body = {
-      eventId: parseInt(id),
-      ticketTierId: selectedTierId,
-      quantity,
-      email,
-      ref: refCode || storedRef || null,
-      paymentMethod: typeof method === 'string' ? method : 'card',
-    };
-
-    // NEW: push discount code if present
-    if (extras?.discountCode) {
-      body.discountCode = String(extras.discountCode).trim().toUpperCase();
-    }
-
-    const res = await fetchWithAuth(`${API}/api/tickets/checkout`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-
-    const data = await res.json();
-
-    // Free flow
-    if (data.free === true || data.free === 'true') {
-      window.location.href = `/#/success?eventId=${id}`;
-      return;
-    }
-
-    // Manual flow (Zelle / Pago Móvil / Cash)
-    if (data.manual === true) {
-      // collect ticket IDs
-      const ids = Array.isArray(data.ticketIds) && data.ticketIds.length
-        ? data.ticketIds
-        : (data.ticketId != null ? [data.ticketId] : []);
-
-      // upload receipt to ALL tickets if provided
-      const file = extras?.receiptFile;
-      if (file && ids.length > 0) {
-        try {
-          await Promise.all(ids.map(tid => uploadProof(tid, file, token)));
-        } catch (e) {
-          console.warn('One or more receipt uploads failed:', e);
-        }
+      // Gate by waitlist
+      if (requiresWaitlist && waitlistStatus !== 'approved') {
+        openWaitlistModal()
+        return
       }
 
-      // go to success/pending
-      setShowPopup(false);
-      const methodLower = String(method || 'card').toLowerCase();
-      const since = Date.now();
-      window.location.href =
-        `/#/success?eventId=${id}&pending=${encodeURIComponent(methodLower)}&since=${since}`;
-      return;
-    }
+      const storedRef = localStorage.getItem('wknd_ref')
+      const body = {
+        eventId: parseInt(id),
+        ticketTierId: selectedTierId,
+        quantity,
+        email,
+        ref: refCode || storedRef || null,
+        paymentMethod: typeof method === 'string' ? method : 'card',
+      }
 
-    // Card flow
-    if (data.clientSecret) {
-      setClientSecret(data.clientSecret);
-      setShowPopup(false);
-      return;
-    }
+      if (extras?.discountCode) body.discountCode = String(extras.discountCode).trim().toUpperCase()
 
-    alert(data.error || 'Unexpected server response');
-  } catch (err) {
-    console.error('❌ Checkout failed:', err);
-    alert('Checkout error. Try again.');
-  } finally {
-    setCheckingOut(false);
-    clickedOnceRef.current = false;
+      const res = await fetchWithAuth(`${API}/api/tickets/checkout`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+
+      const data = await res.json()
+
+      // Free flow
+      if (data.free === true || data.free === 'true') {
+        window.location.href = `/#/success?eventId=${id}`
+        return
+      }
+
+      // Manual flow (Zelle / Pago Móvil / Cash)
+      if (data.manual === true) {
+        // collect ticket IDs
+        const ids = Array.isArray(data.ticketIds) && data.ticketIds.length
+          ? data.ticketIds
+          : (data.ticketId != null ? [data.ticketId] : [])
+
+        // upload receipt to ALL tickets if provided
+        const file = extras?.receiptFile
+        if (file && ids.length > 0) {
+          try {
+            await Promise.all(ids.map(tid => uploadProof(tid, file, token)))
+          } catch (e) {
+            console.warn('One or more receipt uploads failed:', e)
+          }
+        }
+
+        // success/pending
+        setShowPopup(false)
+        const methodLower = String(method || 'card').toLowerCase()
+        const since = Date.now()
+        window.location.href =
+          `/#/success?eventId=${id}&pending=${encodeURIComponent(methodLower)}&since=${since}`
+        return
+      }
+
+      // Card flow
+      if (data.clientSecret) {
+        setClientSecret(data.clientSecret)
+        setShowPopup(false)
+        return
+      }
+
+      alert(data.error || 'Unexpected server response')
+    } catch (err) {
+      console.error('❌ Checkout failed:', err)
+      alert('Checkout error. Try again.')
+    } finally {
+      setCheckingOut(false)
+      clickedOnceRef.current = false
+    }
   }
-};
+
+  // ---- Apple Wallet: fetch pass with auth and trigger OS add sheet (Apple only)
+  const handleAddToAppleWallet = async () => {
+    if (!isLoggedIn) { setShowAuth(true); return }
+    try {
+      const res = await fetchWithAuth(PASS_URL_FOR_EVENT(id), { method: 'GET' })
+      if (!res.ok) {
+        const t = await res.text().catch(()=> '')
+        alert(t || 'Unable to generate Apple Wallet pass yet.')
+        return
+      }
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = 'ticket.pkpass'
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      setTimeout(()=> URL.revokeObjectURL(url), 2500)
+    } catch (e) {
+      console.error(e)
+      alert('Problem downloading Apple Wallet pass.')
+    }
+  }
 
   if (showAuth && !isLoggedIn) {
     return (
@@ -285,6 +391,52 @@ const handleBuy = async (method = 'card', extras = {}) => {
 
   if (error) return <div className="event-error">Failed to load event. Please try again later.</div>
   if (!event) return <div className="event-loading">Loading event...</div>
+
+  // ---- Register visibility / label with waitlist
+  const canRegister = !requiresWaitlist || waitlistStatus === 'approved'
+  const registerLabel = requiresWaitlist
+    ? (waitlistStatus === 'approved' ? 'Register' :
+       waitlistStatus === 'pending' ? 'Request Pending' :
+       waitlistStatus === 'denied' ? 'Access Denied' : 'Request Access')
+    : 'Register'
+
+  const onRegisterClick = () => {
+    if (!isLoggedIn) { setShowAuth(true); return }
+    if (requiresWaitlist && waitlistStatus !== 'approved') {
+      openWaitlistModal()
+      return
+    }
+    setShowPopup(true)
+  }
+
+  // ---- VES for popup (same)
+  const vesRateInEvent =
+    event?.vesRate ?? event?.ves_rate ?? event?.vesPerUsd ?? event?.ves_per_usd ??
+    event?.fxVesPerUsd ?? event?.exchangeRateVes ?? event?.exchange_rate_ves ?? null
+
+  const popupPayments = event ? {
+    country: event.country || '',
+    currency: event.currency || '',
+    zelle: {
+      enabled: !!(event.zelleEmail || event.zellePhone),
+      email: event.zelleEmail || '',
+      phone: event.zellePhone || '',
+    },
+    pagoMovil: {
+      enabled:
+        (String(event.country || '').toLowerCase() === 'venezuela' || String(event.currency || '').toUpperCase() === 'VES')
+        && !!event.allowPagoMovil,
+      phone: event.pagoMovilPhone || '',
+      ci: event.pagoMovilCi || '',
+      bank: event.pagoMovilBank || '',
+      rate: typeof vesRateInEvent === 'number' ? vesRateInEvent : undefined,
+      country: event.country || ''
+    },
+    cash: {
+      enabled: !!event.allowCash,
+      note: event.cashNote || '',
+    },
+  } : null
 
   return (
     <div className="event-fullscreen">
@@ -314,16 +466,46 @@ const handleBuy = async (method = 'card', extras = {}) => {
         <p className="event-date">📅 {event?.dateTime ? formatDate(event.dateTime) : ''}</p>
         <p className="event-location">📍 {event?.location || ''}</p>
 
+        {/* Waitlist banner */}
+        {requiresWaitlist && (
+          <div className="waitlist-banner">
+            {waitlistStatus === 'approved' && <span className="chip ok">✅ Approved</span>}
+            {waitlistStatus === 'pending' && <span className="chip warn">⏳ Pending approval</span>}
+            {waitlistStatus === 'denied' && <span className="chip bad">❌ Access denied</span>}
+            {!waitlistStatus && <span className="chip info">📝 List-only event</span>}
+          </div>
+        )}
+
         <div className="event-actions">
-          <button className="btn-primary" onClick={() => setShowPopup(true)}>
-            Register
+          <button className={`btn-primary ${!canRegister ? 'btn-disabled' : ''}`} onClick={onRegisterClick}>
+            {registerLabel}
           </button>
-          <button className="btn-secondary">Share</button>
+
+          <button
+            className="btn-secondary"
+            onClick={() => {
+              const url = window.location.href
+              navigator.clipboard?.writeText(url)
+              alert('Event link copied!')
+            }}
+          >
+            Share
+          </button>
+
+          {/* Apple Wallet CTA — only for Apple users */}
+          {showAppleWallet && (
+            <button className="btn-wallet" onClick={handleAddToAppleWallet} title="Add to Apple Wallet">
+              <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+                <path fill="currentColor" d="M17 5H7a4 4 0 0 0-4 4v6a4 4 0 0 0 4 4h10a4 4 0 0 0 4-4V9a4 4 0 0 0-4-4Zm-9 3h8a2 2 0 0 1 2 2h-5a3 3 0 0 0-2.24 1H6a2 2 0 0 1 2-3Zm8 8H8a2 2 0 0 1-2-2h5a3 3 0 0 0 2.24-1H18a2 2 0 0 1-2 3Z"/>
+              </svg>
+              <span>Add to Apple Wallet</span>
+            </button>
+          )}
         </div>
 
         <div className="event-about">
           <h3>About</h3>
-        <p>{event?.description || 'No description provided.'}</p>
+          <p>{event?.description || 'No description provided.'}</p>
         </div>
 
         <div className="event-map">
@@ -391,6 +573,36 @@ const handleBuy = async (method = 'card', extras = {}) => {
         </div>
       </footer>
 
+      {/* Waitlist modal */}
+      {waitlistModal && (
+        <div className="popup-overlay" onClick={closeWaitlistModal}>
+          <div className="popup-modal small" onClick={(e)=>e.stopPropagation()}>
+            <h3>List-Only Access</h3>
+            {waitlistStatus === 'approved' && (
+              <p className="muted">✅ You’re approved. You can register now.</p>
+            )}
+            {waitlistStatus === 'pending' && (
+              <p className="muted">⏳ Your request is pending. We’ll notify you when the organizer approves.</p>
+            )}
+            {waitlistStatus === 'denied' && (
+              <p className="muted">❌ The organizer denied access for this event.</p>
+            )}
+            {!waitlistStatus && (
+              <p className="muted">This event requires approval. Request access to continue.</p>
+            )}
+
+            <div className="waitlist-actions">
+              {!waitlistStatus && (
+                <button className="btn-primary" disabled={waitlistBusy} onClick={requestWaitlistAccess}>
+                  {waitlistBusy ? 'Sending…' : 'Request Access'}
+                </button>
+              )}
+              <button className="btn-secondary" onClick={closeWaitlistModal}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showPopup && (
         <RegisterPopup
           eventId={id}
@@ -400,7 +612,7 @@ const handleBuy = async (method = 'card', extras = {}) => {
           selectedTierId={selectedTierId}
           quantity={quantity}
           submitting={checkingOut}
-          payments={payments}
+          payments={popupPayments}
           onClose={() => {
             setShowPopup(false)
             setSelectedTierId(null)
@@ -436,15 +648,4 @@ const handleBuy = async (method = 'card', extras = {}) => {
       )}
     </div>
   )
-}
-
-function formatDate(isoString) {
-  const date = new Date(isoString)
-  return date.toLocaleString('en-US', {
-    weekday: 'long',
-    month: 'long',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  })
 }

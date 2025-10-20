@@ -1,4 +1,3 @@
-// components/RegisterPopup.jsx
 import React, { useMemo, useState, useEffect } from 'react'
 import './RegisterPopup.css'
 import { fetchWithAuth, getAccessToken } from '../lib/authClient'
@@ -14,6 +13,11 @@ const LS_VES_RATE  = Number(localStorage.getItem('ves_rate') || 0)
 const BCV_RATE_KEY = 'ves_rate_bcv'
 const BCV_TS_KEY   = 'ves_rate_bcv_ts'
 const BCV_TTL_MS   = 30 * 60 * 1000 // 30 minutes
+
+// ---------- Apple detection & Wallet helpers ----------
+const isApplePlatform = () => /iPhone|iPad|iPod|Macintosh/.test(navigator.userAgent || '')
+const canShowAppleWallet = () => isApplePlatform()
+const PASS_URL_FOR_EVENT = (eventId) => `${API}/api/passes/event/${encodeURIComponent(eventId)}`
 
 export default function RegisterPopup({
   eventId, tiers, loading=false, error=null,
@@ -54,7 +58,55 @@ export default function RegisterPopup({
     return () => { if (receiptPreview) URL.revokeObjectURL(receiptPreview) }
   }, [receiptPreview])
 
-  // Detect Venezuela -> hide Card
+  // ---------- Waitlist state ----------
+  const [isListOnly, setIsListOnly] = useState(false) // true if status endpoint exists (200)
+  const [wlStatus, setWlStatus] = useState(null)      // null | 'pending' | 'approved' | 'denied'
+  const [wlBusy, setWlBusy] = useState(false)
+  useEffect(() => {
+    let cancelled = false
+    if (!eventId) return
+    ;(async () => {
+      try {
+        const res = await fetchWithAuth(`${API}/events/${eventId}/waitlist/status`)
+        if (res.status === 404) { if (!cancelled) { setIsListOnly(false); setWlStatus(null) }; return }
+        if (!res.ok) { if (!cancelled) { setIsListOnly(false); setWlStatus(null) }; return }
+        const text = await res.text()
+        let payload = null
+        try { payload = text ? JSON.parse(text) : null } catch {}
+        const status = (payload && payload.status) ? String(payload.status).toLowerCase() : (text || null)
+        if (!cancelled) {
+          setIsListOnly(true)
+          setWlStatus(status ? String(status).toLowerCase() : null)
+        }
+      } catch {
+        if (!cancelled) { setIsListOnly(false); setWlStatus(null) }
+      }
+    })()
+    return () => { cancelled = true }
+  }, [eventId])
+
+  const requestWaitlistAccess = async () => {
+    try {
+      setWlBusy(true)
+      const fullName = localStorage.getItem('fullName') || 'AnonymousUser'
+      const res = await fetchWithAuth(`${API}/events/${eventId}/waitlist/request`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: `fullName=${encodeURIComponent(fullName)}`
+      })
+      if (res.ok) {
+        setIsListOnly(true)
+        setWlStatus('pending')
+      } else {
+        const t = await res.text().catch(()=> '')
+        alert(t || 'Could not submit request right now.')
+      }
+    } finally {
+      setWlBusy(false)
+    }
+  }
+
+  // ---------- Venezuela / payment method visibility ----------
   const isVenezuela = useMemo(() => {
     const country  = String(payments?.country || payments?.pagoMovil?.country || '').toLowerCase()
     const currency = String(payments?.currency || '').toUpperCase()
@@ -215,7 +267,7 @@ export default function RegisterPopup({
   const hasWindow = (t) => !!t?.startTime && !!t?.endTime
   const fmtWindow = (t) => {
     const s = t?.startTime ? new Date(t.startTime) : null
-       const e = t?.endTime ? new Date(t.endTime) : null
+    const e = t?.endTime ? new Date(t.endTime) : null
     const opts = { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }
     return s && e ? `${s.toLocaleString(undefined, opts)} – ${e.toLocaleString(undefined, opts)}` : ''
   }
@@ -260,6 +312,16 @@ export default function RegisterPopup({
     : 'card'
 
   const handleConfirm = () => {
+    // Block purchase if list-only and not approved
+    if (isListOnly && wlStatus !== 'approved') {
+      alert(wlStatus === 'pending'
+        ? 'Your access request is pending approval.'
+        : wlStatus === 'denied'
+          ? 'Your request was denied by the organizer.'
+          : 'This is a list-only event. Request access first.')
+      return
+    }
+
     if (!canPay) return
     if (needsReceipt && !receiptFile) {
       setReceiptError('Please attach the receipt image.')
@@ -381,209 +443,271 @@ export default function RegisterPopup({
     setReceiptError('')
   }
 
+  // Apple Wallet handler (Apple devices only)
+  const appleWalletVisible = canShowAppleWallet()
+  const handleAddToAppleWallet = async () => {
+    try {
+      const res = await fetchWithAuth(PASS_URL_FOR_EVENT(eventId), { method: 'GET' })
+      if (!res.ok) {
+        const t = await res.text().catch(()=> '')
+        alert(t || 'Unable to generate Apple Wallet pass yet.')
+        return
+      }
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = 'ticket.pkpass'
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      setTimeout(()=> URL.revokeObjectURL(url), 2500)
+    } catch (e) {
+      console.error(e)
+      alert('Problem downloading Apple Wallet pass.')
+    }
+  }
+
   return (
     <div className="popup-overlay" onClick={onClose}>
       <div className="popup-modal" onClick={(e) => e.stopPropagation()}>
-        <h3>Select Your Ticket</h3>
 
-        {loading ? (
-          <div className="empty-tiers">Loading tiers…</div>
-        ) : error ? (
-          <div className="empty-tiers">Couldn’t load tiers. Try again.</div>
-        ) : tiers?.length ? (
-          tiers.slice().sort((a,b)=>(a.tierOrder??0)-(b.tierOrder??0)).map((tier)=>{
-            const selected = selectedTierId === tier.id
-            const unavailable = isUnavailable(tier)
-            const desc = splitDescription(tier.description)
-            return (
-              <div
-                key={tier.id}
-                className={['ticket-tier','rich',selected?'selected':'',unavailable?'disabled':''].join(' ').trim()}
-                onClick={()=>{ if(!unavailable) onSelectTier(tier.id) }}
-              >
-                <div className="tier-row">
-                  <div className="tier-name">{tier.name}</div>
-                  <div className="tier-price">{fmtUnitPrice(tier.price)}</div>
-                </div>
-                {desc.length>0 && <ul className="tier-desc">{desc.map((li,i)=><li key={i}>{li}</li>)}</ul>}
-                <div className="tier-meta">
-                  <span className="chip">{availabilityText(tier)}</span>
-                  {hasWindow(tier) && <span className="chip light">🕒 {fmtWindow(tier)}</span>}
-                  {isLockedByOrder(tier)&&!tier.forceOpen&&!isSoldOut(tier)&&!hasNotStarted(tier,Date.now())&&!hasEnded(tier,Date.now()) && (
-                    <span className="chip warn">Next tier not open</span>
-                  )}
-                </div>
-              </div>
-            )
-          })
-        ) : (
-          <div className="empty-tiers">No tiers available.</div>
-        )}
-
-        <div className="ticket-quantity">
-          <label>Quantity</label>
-          <input
-            type="number" min="1" max={maxQty} step="1" value={quantity}
-            onChange={(e)=>{ const n=parseInt(e.target.value||'1',10); const clamped=isNaN(n)?1:Math.max(1,Math.min(maxQty,n)); onQuantityChange(clamped) }}
-            onBlur={(e)=>{ const n=parseInt(e.target.value||'1',10); const clamped=isNaN(n)?1:Math.max(1,Math.min(maxQty,n)); if(clamped!==quantity) onQuantityChange(clamped) }}
-          />
+        <div className="popup-header">
+          <h3>Select Your Ticket</h3>
+          {appleWalletVisible && (
+            <button className="wallet-cta" onClick={handleAddToAppleWallet} title="Add to Apple Wallet">
+              <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+                <path fill="currentColor" d="M17 5H7a4 4 0 0 0-4 4v6a4 4 0 0 0 4 4h10a4 4 0 0 0 4-4V9a4 4 0 0 0-4-4Zm-9 3h8a2 2 0 0 1 2 2h-5a3 3 0 0 0-2.24 1H6a2 2 0 0 1 2-3Zm8 8H8a2 2 0 0 1-2-2h5a3 3 0 0 0 2.24-1H18a2 2 0 0 1-2 3Z"/>
+              </svg>
+              <span>Add to Wallet</span>
+            </button>
+          )}
         </div>
 
-        {/* Discount code */}
-        <div className="ticket-quantity" style={{marginTop:8}}>
-          <label>Discount</label>
-          <div style={{display:'flex', gap:8, width:'100%'}}>
-            <input
-              type="text"
-              placeholder="CODE"
-              value={discountCode}
-              onChange={e=>setDiscountCode(e.target.value)}
-              style={{flex:1}}
-            />
-            <button
-              className="tab"
-              disabled={!discountCode.trim()}
-              onClick={()=> setDiscountCode(discountCode.trim().toUpperCase())}
-            >
-              Apply
-            </button>
-            {!!discountCode && (
-              <button
-                className="tab"
-                onClick={()=>{ setDiscountCode(''); setLastAppliedCode(null); setDiscountMessage(null); }}
-              >
-                Clear
+        {/* Waitlist block */}
+        {isListOnly && wlStatus !== 'approved' ? (
+          <div className="waitlist-block">
+            <div className="wl-status">
+              {wlStatus === 'pending' && <span className="chip warn">⏳ Pending approval</span>}
+              {wlStatus === 'denied' && <span className="chip bad">❌ Access denied</span>}
+              {!wlStatus && <span className="chip info">📝 This event requires approval</span>}
+            </div>
+            <p className="wl-copy">
+              {wlStatus === 'pending'
+                ? 'Your request is pending. We’ll notify you when the organizer approves.'
+                : wlStatus === 'denied'
+                  ? 'The organizer denied access for this event.'
+                  : 'Request access to join the waitlist. You’ll be able to register once approved.'}
+            </p>
+            {!wlStatus && (
+              <button className="buy-button" onClick={requestWaitlistAccess} disabled={wlBusy}>
+                {wlBusy ? 'Sending…' : 'Request Access'}
               </button>
             )}
+            <button className="tab wl-close" onClick={onClose} style={{marginTop:8}}>Close</button>
           </div>
-          {!!discountMessage && <div className="fee-hint">{discountMessage}</div>}
-        </div>
-
-        {/* Fee box */}
-        {selectedTierId && quantity >= 1 && (
-          <div className="fee-box" aria-live="polite">
-            {feeLoading ? (
-              <div className="fee-row muted">Calculating fees…</div>
+        ) : (
+          <>
+            {loading ? (
+              <div className="empty-tiers">Loading tiers…</div>
+            ) : error ? (
+              <div className="empty-tiers">Couldn’t load tiers. Try again.</div>
+            ) : tiers?.length ? (
+              tiers.slice().sort((a,b)=>(a.tierOrder??0)-(b.tierOrder??0)).map((tier)=>{
+                const selected = selectedTierId === tier.id
+                const unavailable = isUnavailable(tier)
+                const desc = splitDescription(tier.description)
+                return (
+                  <div
+                    key={tier.id}
+                    className={['ticket-tier','rich',selected?'selected':'',unavailable?'disabled':''].join(' ').trim()}
+                    onClick={()=>{ if(!unavailable) onSelectTier(tier.id) }}
+                  >
+                    <div className="tier-row">
+                      <div className="tier-name">{tier.name}</div>
+                      <div className="tier-price">{fmtUnitPrice(tier.price)}</div>
+                    </div>
+                    {desc.length>0 && <ul className="tier-desc">{desc.map((li,i)=><li key={i}>{li}</li>)}</ul>}
+                    <div className="tier-meta">
+                      <span className="chip">{availabilityText(tier)}</span>
+                      {hasWindow(tier) && <span className="chip light">🕒 {fmtWindow(tier)}</span>}
+                      {isLockedByOrder(tier)&&!tier.forceOpen&&!isSoldOut(tier)&&!hasNotStarted(tier,Date.now())&&!hasEnded(tier,Date.now()) && (
+                        <span className="chip warn">Next tier not open</span>
+                      )}
+                    </div>
+                  </div>
+                )
+              })
             ) : (
-              <>
-                {feeRows.rows.slice(0,-1).map((r,idx)=>(
-                  <div className="fee-row" key={idx}>
-                    <span className="fee-label">{r.label}</span>
-                    <span className="fee-value">{r.value}</span>
-                  </div>
-                ))}
-                <div className="fee-divider" />
-                {feeRows.rows.slice(-1).map((r,idx)=>(
-                  <div className={`fee-row ${r.strong ? 'total' : ''}`} key={`t-${idx}`}>
-                    <span className="fee-label">{r.label}</span>
-                    <span className="fee-value">{r.value}</span>
-                  </div>
-                ))}
-                {feeHadError && (
-                  <div className="fee-hint">Showing estimate. Final fees will appear at checkout.</div>
+              <div className="empty-tiers">No tiers available.</div>
+            )}
+
+            <div className="ticket-quantity">
+              <label>Quantity</label>
+              <input
+                type="number" min="1" max={maxQty} step="1" value={quantity}
+                onChange={(e)=>{ const n=parseInt(e.target.value||'1',10); const clamped=isNaN(n)?1:Math.max(1,Math.min(maxQty,n)); onQuantityChange(clamped) }}
+                onBlur={(e)=>{ const n=parseInt(e.target.value||'1',10); const clamped=isNaN(n)?1:Math.max(1,Math.min(maxQty,n)); if(clamped!==quantity) onQuantityChange(clamped) }}
+              />
+            </div>
+
+            {/* Discount code */}
+            <div className="ticket-quantity" style={{marginTop:8}}>
+              <label>Discount</label>
+              <div style={{display:'flex', gap:8, width:'100%'}}>
+                <input
+                  type="text"
+                  placeholder="CODE"
+                  value={discountCode}
+                  onChange={e=>setDiscountCode(e.target.value)}
+                  style={{flex:1}}
+                />
+                <button
+                  className="tab"
+                  disabled={!discountCode.trim()}
+                  onClick={()=> setDiscountCode(discountCode.trim().toUpperCase())}
+                >
+                  Apply
+                </button>
+                {!!discountCode && (
+                  <button
+                    className="tab"
+                    onClick={()=>{ setDiscountCode(''); setLastAppliedCode(null); setDiscountMessage(null); }}
+                  >
+                    Clear
+                  </button>
                 )}
-                {method === 'pagoMovil' && (fee?.currency?.toUpperCase?.() !== 'VES') && vesRate > 0 && (
-                  <div className="fee-hint">
-                    {bcvSource === 'override'
-                      ? `Override ${vesRate.toLocaleString(undefined,{ maximumFractionDigits: 6 })} Bs/USD`
-                      : (bcvSource === 'bcv' || bcvSource === 'cache')
-                        ? `BCV ${vesRate.toLocaleString(undefined,{ maximumFractionDigits: 6 })} Bs/USD`
-                        : `Converted at ${vesRate} Bs/USD.`}
-                  </div>
-                )}
-              </>
-            )}
-          </div>
-        )}
-
-        {/* Method tabs */}
-        <div className="method-tabs">
-          {showCard && (
-            <button className={`tab ${method==='card' ? 'active' : ''}`} onClick={() => setMethod('card')} disabled={!canPay && method!=='card'}>
-              Card
-            </button>
-          )}
-          {showPM && (
-            <button className={`tab ${method==='pagoMovil' ? 'active' : ''}`} onClick={() => setMethod('pagoMovil')} disabled={!canPay && method!=='pagoMovil'}>
-              Pago Móvil
-            </button>
-          )}
-          {showZelle && (
-            <button className={`tab ${method==='zelle' ? 'active' : ''}`} onClick={() => setMethod('zelle')} disabled={!canPay && method!=='zelle'}>
-              Zelle
-            </button>
-          )}
-          {showCash && (
-            <button className={`tab ${method==='cash' ? 'active' : ''}`} onClick={() => setMethod('cash')} disabled={!canPay && method!=='cash'}>
-              Cash
-            </button>
-          )}
-        </div>
-
-        {method !== 'card' && (
-          <div className="alt-details">
-            {method === 'pagoMovil' && showPM && (
-              <div className="alt-box">
-                {payments?.pagoMovil?.phone && <div>📱 {payments.pagoMovil.phone}</div>}
-                {payments?.pagoMovil?.ci    && <div>🪪 CI: {payments.pagoMovil.ci}</div>}
-                {payments?.pagoMovil?.bank  && <div>🏦 {payments.pagoMovil.bank}</div>}
-                <div className="alt-note">After paying via Pago Móvil, press <strong>Pay</strong> to notify the organizer.</div>
               </div>
-            )}
-            {method === 'zelle' && showZelle && (
-              <div className="alt-box">
-                {payments?.zelle?.email && <div>📧 {payments.zelle.email}</div>}
-                {payments?.zelle?.phone && <div>📞 {payments.zelle.phone}</div>}
-                <div className="alt-note">After sending your Zelle payment, press <strong>Pay</strong> to notify the organizer.</div>
-              </div>
-            )}
-            {method === 'cash' && showCash && (
-              <div className="alt-box">
-                {payments?.cash?.note && <div>📝 {payments.cash.note}</div>}
-                <div className="alt-note">Press <strong>Pay</strong> to notify the organizer that you’ll pay in cash.</div>
-              </div>
-            )}
+              {!!discountMessage && <div className="fee-hint">{discountMessage}</div>}
+            </div>
 
-            {/* Receipt uploader (Zelle/Pago Móvil) */}
-            {(method === 'zelle' || method === 'pagoMovil') && (
-              <div className="receipt-upload">
-                <label className="receipt-label">Attach receipt (image)</label>
-                {!receiptFile ? (
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={e => onReceiptPick(e.target.files?.[0])}
-                  />
+            {/* Fee box */}
+            {selectedTierId && quantity >= 1 && (
+              <div className="fee-box" aria-live="polite">
+                {feeLoading ? (
+                  <div className="fee-row muted">Calculating fees…</div>
                 ) : (
-                  <div className="receipt-preview">
-                    {receiptPreview && <img src={receiptPreview} alt="Receipt preview" />}
-                    <button className="remove-receipt" onClick={removeReceipt}>×</button>
-                  </div>
+                  <>
+                    {feeRows.rows.slice(0,-1).map((r,idx)=>(
+                      <div className="fee-row" key={idx}>
+                        <span className="fee-label">{r.label}</span>
+                        <span className="fee-value">{r.value}</span>
+                      </div>
+                    ))}
+                    <div className="fee-divider" />
+                    {feeRows.rows.slice(-1).map((r,idx)=>(
+                      <div className={`fee-row ${r.strong ? 'total' : ''}`} key={`t-${idx}`}>
+                        <span className="fee-label">{r.label}</span>
+                        <span className="fee-value">{r.value}</span>
+                      </div>
+                    ))}
+                    {feeHadError && (
+                      <div className="fee-hint">Showing estimate. Final fees will appear at checkout.</div>
+                    )}
+                    {method === 'pagoMovil' && (fee?.currency?.toUpperCase?.() !== 'VES') && vesRate > 0 && (
+                      <div className="fee-hint">
+                        {bcvSource === 'override'
+                          ? `Override ${vesRate.toLocaleString(undefined,{ maximumFractionDigits: 6 })} Bs/USD`
+                          : (bcvSource === 'bcv' || bcvSource === 'cache')
+                            ? `BCV ${vesRate.toLocaleString(undefined,{ maximumFractionDigits: 6 })} Bs/USD`
+                            : `Converted at ${vesRate} Bs/USD.`}
+                      </div>
+                    )}
+                  </>
                 )}
-                {!!receiptError && <div className="error-text">{receiptError}</div>}
               </div>
             )}
-          </div>
+
+            {/* Method tabs */}
+            <div className="method-tabs">
+              {showCard && (
+                <button className={`tab ${method==='card' ? 'active' : ''}`} onClick={() => setMethod('card')} disabled={!canPay && method!=='card'}>
+                  Card
+                </button>
+              )}
+              {showPM && (
+                <button className={`tab ${method==='pagoMovil' ? 'active' : ''}`} onClick={() => setMethod('pagoMovil')} disabled={!canPay && method!=='pagoMovil'}>
+                  Pago Móvil
+                </button>
+              )}
+              {showZelle && (
+                <button className={`tab ${method==='zelle' ? 'active' : ''}`} onClick={() => setMethod('zelle')} disabled={!canPay && method!=='zelle'}>
+                  Zelle
+                </button>
+              )}
+              {showCash && (
+                <button className={`tab ${method==='cash' ? 'active' : ''}`} onClick={() => setMethod('cash')} disabled={!canPay && method!=='cash'}>
+                  Cash
+                </button>
+              )}
+            </div>
+
+            {method !== 'card' && (
+              <div className="alt-details">
+                {method === 'pagoMovil' && showPM && (
+                  <div className="alt-box">
+                    {payments?.pagoMovil?.phone && <div>📱 {payments.pagoMovil.phone}</div>}
+                    {payments?.pagoMovil?.ci    && <div>🪪 CI: {payments.pagoMovil.ci}</div>}
+                    {payments?.pagoMovil?.bank  && <div>🏦 {payments.pagoMovil.bank}</div>}
+                    <div className="alt-note">After paying via Pago Móvil, press <strong>Pay</strong> to notify the organizer.</div>
+                  </div>
+                )}
+                {method === 'zelle' && showZelle && (
+                  <div className="alt-box">
+                    {payments?.zelle?.email && <div>📧 {payments.zelle.email}</div>}
+                    {payments?.zelle?.phone && <div>📞 {payments.zelle.phone}</div>}
+                    <div className="alt-note">After sending your Zelle payment, press <strong>Pay</strong> to notify the organizer.</div>
+                  </div>
+                )}
+                {method === 'cash' && showCash && (
+                  <div className="alt-box">
+                    {payments?.cash?.note && <div>📝 {payments.cash.note}</div>}
+                    <div className="alt-note">Press <strong>Pay</strong> to notify the organizer that you’ll pay in cash.</div>
+                  </div>
+                )}
+
+                {/* Receipt uploader (Zelle/Pago Móvil) */}
+                {(method === 'zelle' || method === 'pagoMovil') && (
+                  <div className="receipt-upload">
+                    <label className="receipt-label">Attach receipt (image)</label>
+                    {!receiptFile ? (
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={e => onReceiptPick(e.target.files?.[0])}
+                      />
+                    ) : (
+                      <div className="receipt-preview">
+                        {receiptPreview && <img src={receiptPreview} alt="Receipt preview" />}
+                        <button className="remove-receipt" onClick={removeReceipt}>×</button>
+                      </div>
+                    )}
+                    {!!receiptError && <div className="error-text">{receiptError}</div>}
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div className="pay-buttons">
+              <button
+                className="buy-button"
+                disabled={!canPay || (needsReceipt && !receiptFile)}
+                onClick={handleConfirm}
+                style={submitting ? { pointerEvents: 'none', opacity: 0.6 } : {}}
+              >
+                {submitting
+                  ? (method==='card' ? 'Processing…' : 'Sending…')
+                  : (method==='card' ? 'Pay with card' : `Pay (${methodPretty})`)}
+              </button>
+
+              {method !== 'card' && (
+                <p className="pay-hint">
+                  {needsReceipt ? 'Please attach the receipt image before paying.' : 'Manual methods notify the organizer. You’ll get your ticket by email after they confirm.'}
+                </p>
+              )}
+            </div>
+          </>
         )}
-
-        <div className="pay-buttons">
-          <button
-            className="buy-button"
-            disabled={!canPay || (needsReceipt && !receiptFile)}
-            onClick={handleConfirm}
-            style={submitting ? { pointerEvents: 'none', opacity: 0.6 } : {}}
-          >
-            {submitting
-              ? (method==='card' ? 'Processing…' : 'Sending…')
-              : (method==='card' ? 'Pay with card' : `Pay (${methodPretty})`)}
-          </button>
-
-          {method !== 'card' && (
-            <p className="pay-hint">
-              {needsReceipt ? 'Please attach the receipt image before paying.' : 'Manual methods notify the organizer. You’ll get your ticket by email after they confirm.'}
-            </p>
-          )}
-        </div>
       </div>
     </div>
   )

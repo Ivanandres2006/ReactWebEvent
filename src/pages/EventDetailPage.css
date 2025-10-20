@@ -285,3 +285,30 @@ body {
     flex-wrap: wrap;
   }
 }
+
+/* Waitlist banner chips */
+.waitlist-banner { display:flex; gap:8px; margin:8px 0 2px; }
+.chip.ok   { background: rgba(0,230,118,.16); color:#b8ffd7; padding:4px 10px; border-radius:999px; font-size:12px; }
+.chip.warn { background: rgba(255,165,0,.18); color:#ffdcb3; padding:4px 10px; border-radius:999px; font-size:12px; }
+.chip.bad  { background: rgba(255,77,77,.15); color:#ffb3b3; padding:4px 10px; border-radius:999px; font-size:12px; }
+.chip.info { background: rgba(255,255,255,.08); color:#eaeaea; padding:4px 10px; border-radius:999px; font-size:12px; }
+
+/* Wallet button */
+.btn-wallet{
+  display:inline-flex; align-items:center; gap:8px;
+  background:#111; color:#fff; border:1px solid #222;
+  padding:10px 14px; border-radius:12px;
+  box-shadow: 0 0 0 0 transparent; transition: box-shadow .15s ease, transform .05s ease;
+}
+.btn-wallet:hover{ box-shadow: 0 3px 14px rgba(0,0,0,.35); }
+.btn-wallet:active{ transform: translateY(1px); }
+
+/* Disabled primary */
+.btn-disabled{ opacity:.6; pointer-events:none; }
+
+/* Small modal variant */
+.popup-modal.small{ max-width:420px; }
+.popup-modal.small .muted{ color: rgba(255,255,255,.78); }
+
+/* Waitlist actions */
+.waitlist-actions{ display:flex; gap:10px; justify-content:center; margin-top:8px; }
