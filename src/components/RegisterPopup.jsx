@@ -574,7 +574,6 @@ export default function RegisterPopup({
             )}
           </div>
         )}
-
         <div className="pay-buttons">
           <button
             className="buy-button"
