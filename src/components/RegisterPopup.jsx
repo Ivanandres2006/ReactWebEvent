@@ -552,7 +552,6 @@ export default function RegisterPopup({
                 <div className="alt-note">Press <strong>Pay</strong> to notify the organizer that you’ll pay in cash.</div>
               </div>
             )}
-
             {/* 🔻 Receipt uploader shown for Zelle/Pago Móvil */}
             {(method === 'zelle' || method === 'pagoMovil') && (
               <div className="receipt-upload">
