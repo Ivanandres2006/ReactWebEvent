@@ -492,15 +492,7 @@ export default function EventDetailPage() {
             Share
           </button>
 
-          {/* Apple Wallet CTA — only for Apple users */}
-          {showAppleWallet && (
-            <button className="btn-wallet" onClick={handleAddToAppleWallet} title="Add to Apple Wallet">
-              <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
-                <path fill="currentColor" d="M17 5H7a4 4 0 0 0-4 4v6a4 4 0 0 0 4 4h10a4 4 0 0 0 4-4V9a4 4 0 0 0-4-4Zm-9 3h8a2 2 0 0 1 2 2h-5a3 3 0 0 0-2.24 1H6a2 2 0 0 1 2-3Zm8 8H8a2 2 0 0 1-2-2h5a3 3 0 0 0 2.24-1H18a2 2 0 0 1-2 3Z"/>
-              </svg>
-              <span>Add to Apple Wallet</span>
-            </button>
-          )}
+          
         </div>
 
         <div className="event-about">
