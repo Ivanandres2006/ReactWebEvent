@@ -5,7 +5,6 @@ html, body, #root {
   min-height: 100%;
   overflow-y: auto;
   overflow-x: hidden;
-  -webkit-overflow-scrolling: touch;
   overscroll-behavior-y: contain;   /* avoid rubber-band showing white bg */
 }
 
@@ -192,34 +191,47 @@ body {
 
 /* Overlay: fixed, not scrollable; isolate a new stacking context (iOS safe) */
 .popup-overlay{
-  position:fixed; inset:0;
-  background:rgba(0,0,0,.55);
-  overflow:hidden;                 /* was auto */
-  z-index:9999;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.55);
+  overflow: hidden;                 /* do not use 'auto' here */
+  z-index: 9999;
 
-  isolation:isolate;               /* new painting context */
-  contain:paint;                   /* limits invalidation */
-  -webkit-transform:translateZ(0); /* force layer */
-  backface-visibility:hidden;
-  -webkit-backface-visibility:hidden;
+  isolation: isolate;
+  contain: paint;
+  -webkit-transform: translateZ(0);
+  transform: translateZ(0);
+  will-change: transform;           /* NEW */
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
 }
 
-/* Modal: the only scroll area; avoid momentum scrolling on iOS */
 .popup-modal{
-  max-height:90dvh;
-  overflow:auto;
+  max-height: 90dvh;
+  overflow: auto;
+
+  /* iOS paint stability */
+  -webkit-overflow-scrolling: auto;   /* turn off momentum in modal */
+  -webkit-transform: translateZ(0);
+  transform: translateZ(0);
+  will-change: transform;
 }
+
 
 /* When any popup is open, prevent page scroll (optional but helps on iOS) */
-.body-no-scroll{ overflow:hidden; height:100%; }
+.body-no-scroll{
+  overflow: hidden;
+  position: fixed;   /* prevents content jump on iOS */
+  width: 100%;
+}
 
-/* Your cards use backdrop-filter; iOS can white-screen when a fixed overlay appears */
 .ios-safari .event-about,
 .ios-safari .event-map{
-  backdrop-filter:none !important;          /* remove blur on iOS */
-  -webkit-backdrop-filter:none !important;
-  background:rgba(255,255,255,0.06);        /* keep a subtle tint */
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  background: rgba(255,255,255,0.06);
 }
+
 
 
 /* --- Footer --- */

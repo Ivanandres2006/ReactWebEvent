@@ -261,13 +261,14 @@ useEffect(() => {
   const openWaitlistModal = () => setWaitlistModal(true)
   const closeWaitlistModal = () => setWaitlistModal(false)
 
-  const raf = () => new Promise(requestAnimationFrame);
+// one-frame paint yield (safest across browsers)
+const nextFrame = () => new Promise(resolve => requestAnimationFrame(() => resolve()));
 
 const requestWaitlistAccess = async () => {
   if (!isLoggedIn || waitlistBusy) { if (!isLoggedIn) setShowAuth(true); return }
   try {
     setWaitlistBusy(true);
-    await raf(); // let iOS paint the overlay before the network work
+    await nextFrame(); // let iOS paint the overlay before the network work
 
     const name = (localStorage.getItem('fullName') || 'AnonymousUser').trim();
     const storedRef = localStorage.getItem('wknd_ref');
