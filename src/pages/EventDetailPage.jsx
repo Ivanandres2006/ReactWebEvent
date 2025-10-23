@@ -88,6 +88,15 @@ export default function EventDetailPage() {
     document.body.classList.toggle('body-no-scroll', open)
     return () => document.body.classList.remove('body-no-scroll')
   }, [waitlistModal, showPopup, clientSecret])
+
+  // iOS Safari detector → adds a class to <html>
+useEffect(() => {
+  const ua = navigator.userAgent || '';
+  const isIOSSafari =
+    /iP(hone|od|ad)/.test(ua) && /WebKit/.test(ua) && !/CriOS|FxiOS/.test(ua);
+  if (isIOSSafari) document.documentElement.classList.add('ios-safari');
+}, []);
+
   
   // save referral
   useEffect(() => {
@@ -252,48 +261,46 @@ export default function EventDetailPage() {
   const openWaitlistModal = () => setWaitlistModal(true)
   const closeWaitlistModal = () => setWaitlistModal(false)
 
-  // FIX: send JSON; accept 200/201/204; treat 409 as already requested (pending)
-  const requestWaitlistAccess = async () => {
-    if (!isLoggedIn || waitlistBusy) { if (!isLoggedIn) setShowAuth(true); return }
-    try {
-      setWaitlistBusy(true)
-      const name = (localStorage.getItem('fullName') || 'AnonymousUser').trim()
-      const storedRef = localStorage.getItem('wknd_ref')
-      const ref = (refCode || storedRef || '').trim()
-  
-      const body = new URLSearchParams()
-      body.set('fullName', name)
-      if (ref) body.set('ref', ref)
-  
-      const res = await fetchWithAuth(`${API}/events/${id}/waitlist/request`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: body.toString()
-      })
-  
-      if (res.status === 200 || res.status === 201 || res.status === 204 || res.status === 409) {
-        setWaitlistStatus('pending')
-        return
-      }
-      if (res.status === 401) {
-        setShowAuth(true)
-        return
-      }
-  
-      if (res.status === 400 || res.status === 415) {
-        const retry = await fetchWithAuth(`${API}/events/${id}/waitlist/request`, { method: 'POST' })
-        if (retry.ok) { setWaitlistStatus('pending'); return }
-      }
-  
-      const msg = await res.text().catch(() => '')
-      alert(msg || `Could not submit request (HTTP ${res.status}).`)
-    } catch (e) {
-      console.error('Waitlist request error:', e)
-      alert('Network error requesting access. Please try again.')
-    } finally {
-      setWaitlistBusy(false)
+  const raf = () => new Promise(requestAnimationFrame);
+
+const requestWaitlistAccess = async () => {
+  if (!isLoggedIn || waitlistBusy) { if (!isLoggedIn) setShowAuth(true); return }
+  try {
+    setWaitlistBusy(true);
+    await raf(); // let iOS paint the overlay before the network work
+
+    const name = (localStorage.getItem('fullName') || 'AnonymousUser').trim();
+    const storedRef = localStorage.getItem('wknd_ref');
+    const ref = (refCode || storedRef || '').trim();
+
+    const body = new URLSearchParams();
+    body.set('fullName', name);
+    if (ref) body.set('ref', ref);
+
+    const res = await fetchWithAuth(`${API}/events/${id}/waitlist/request`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: body.toString()
+    });
+
+    if ([200,201,204,409].includes(res.status)) { setWaitlistStatus('pending'); return }
+    if (res.status === 401) { setShowAuth(true); return }
+
+    if ([400,415].includes(res.status)) {
+      const retry = await fetchWithAuth(`${API}/events/${id}/waitlist/request`, { method:'POST' });
+      if (retry.ok) { setWaitlistStatus('pending'); return }
     }
+
+    const msg = await res.text().catch(()=> '');
+    // show inline message instead of alert (alerts can still glitch iOS)
+    console.warn(msg || `Could not submit request (HTTP ${res.status}).`);
+  } catch (e) {
+    console.error('Waitlist request error:', e);
+  } finally {
+    setWaitlistBusy(false);
   }
+};
+
   
 
   // Handle checkout
