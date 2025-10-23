@@ -1,11 +1,11 @@
 /* --- Global/scroll: keep everything dark, no white flashes --- */
 html, body, #root {
-  background: #0A0A23;             /* solid base color */
+  background: #0A0A23;
   height: auto;
   min-height: 100%;
   overflow-y: auto;
   overflow-x: hidden;
-  overscroll-behavior-y: contain;   /* avoid rubber-band showing white bg */
+  overscroll-behavior-y: contain;
 }
 
 html { scroll-behavior: smooth; }
@@ -16,14 +16,15 @@ body {
   color: #fff;
 }
 
-
-
+/* While ANY modal is open, disable page scroll and backdrop-filter (iOS paint safety) */
+html.modal-open { overflow: hidden; }
+html.modal-open * {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
 
 /* Optional: tint scrollbars (desktop) */
-* {
-  scrollbar-width: thin;
-  scrollbar-color: #3ee68f #0A0A23;
-}
+* { scrollbar-width: thin; scrollbar-color: #3ee68f #0A0A23; }
 *::-webkit-scrollbar { width: 10px; }
 *::-webkit-scrollbar-thumb { background: #2b9e66; border-radius: 10px; }
 *::-webkit-scrollbar-track { background: #0A0A23; }
@@ -51,24 +52,11 @@ body {
 }
 
 /* --- App store button --- */
-.event-app-download {
-  position: fixed;
-  top: 20px;
-  right: 20px;
-  z-index: 1000;
-}
-.event-app-download img {
-  width: 32px;
-  height: 32px;
-  cursor: pointer;
-}
+.event-app-download { position: fixed; top: 20px; right: 20px; z-index: 1000; }
+.event-app-download img { width: 32px; height: 32px; cursor: pointer; }
 
 /* --- Hero image --- */
-.event-top-section {
-  display: flex;
-  justify-content: center;
-  padding-top: 16px;
-}
+.event-top-section { display: flex; justify-content: center; padding-top: 16px; }
 .event-hero-image {
   width: 90%;
   max-width: 600px;
@@ -80,11 +68,9 @@ body {
 }
 
 /* --- Loading/Error --- */
-.event-error,
-.event-loading {
+.event-error, .event-loading {
   position: absolute;
-  left: 50%;
-  top: 50%;
+  left: 50%; top: 50%;
   transform: translate(-50%, -50%);
   font-size: 40px;
 }
@@ -108,216 +94,73 @@ body {
   -webkit-text-fill-color: transparent;
   margin: 20px 0 8px;
 }
-.event-date,
-.event-location {
-  font-size: 14px;
-  color: #ccc;
-  margin: 4px 0;
-}
+.event-date, .event-location { font-size: 14px; color: #ccc; margin: 4px 0; }
 
 .event-actions {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  gap: 12px;
-  margin-top: 20px;
-  flex-wrap: wrap;
+  display: flex; justify-content: center; align-items: center;
+  gap: 12px; margin-top: 20px; flex-wrap: wrap;
 }
 
 /* --- Buttons --- */
-.btn-primary,
-.btn-secondary {
-  padding: 12px 20px;
-  border-radius: 16px;
-  font-size: 15px;
-  font-weight: 600;
-  cursor: pointer;
-  border: none;
-  min-width: 120px;
-  transition: transform 0.2s ease;
+.btn-primary, .btn-secondary {
+  padding: 12px 20px; border-radius: 16px; font-size: 15px; font-weight: 600;
+  cursor: pointer; border: none; min-width: 120px; transition: transform 0.2s ease;
 }
-.btn-primary {
-  background: #00E676;
-  color: #000;
-  box-shadow: 0 0 10px #00E676aa;
-}
-.btn-secondary {
-  background: #14142B;
-  color: #fff;
-  border: 1px solid #333;
-}
-.btn-primary:hover,
-.btn-secondary:hover {
-  transform: scale(1.03);
-}
+.btn-primary { background: #00E676; color: #000; box-shadow: 0 0 10px #00E676aa; }
+.btn-secondary { background: #14142B; color: #fff; border: 1px solid #333; }
+.btn-primary:hover, .btn-secondary:hover { transform: scale(1.03); }
 
 /* --- Cards --- */
-.event-about,
-.event-map {
-  width: 100%;
-  max-width: 600px;
-  margin-top: 32px;
-  padding: 24px;
+.event-about, .event-map {
+  width: 100%; max-width: 600px; margin-top: 32px; padding: 24px;
   background: rgba(255, 255, 255, 0.04);
   border-radius: 20px;
   backdrop-filter: blur(12px);
   box-shadow: 0 8px 30px rgba(0, 0, 0, 0.3);
 }
-.event-about h3,
-.event-map h3 {
-  font-size: 20px;
-  font-weight: 700;
-  color: #00E676;
-  margin-bottom: 10px;
-  text-align: left;
+.event-about h3, .event-map h3 {
+  font-size: 20px; font-weight: 700; color: #00E676; margin-bottom: 10px; text-align: left;
 }
-.event-about p {
-  font-size: 15px;
-  color: #ddd;
-  text-align: left;
-}
+.event-about p { font-size: 15px; color: #ddd; text-align: left; }
 
-.map-placeholder {
-  width: 100%;
-  height: 280px;
-  background-color: #111;
-  border-radius: 16px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #666;
-  font-size: 15px;
-}
-
-/* Overlay: fixed, not scrollable; isolate a new stacking context (iOS safe) */
-.popup-overlay{
-  position: fixed;
-  inset: 0;
-  background: rgba(0,0,0,.55);
-  overflow: hidden;                 /* do not use 'auto' here */
-  z-index: 9999;
-
-  isolation: isolate;
-  contain: paint;
-  -webkit-transform: translateZ(0);
-  transform: translateZ(0);
-  will-change: transform;           /* NEW */
-  backface-visibility: hidden;
-  -webkit-backface-visibility: hidden;
-}
-
-.popup-modal{
-  max-height: 90dvh;
-  overflow: auto;
-
-  /* iOS paint stability */
-  -webkit-overflow-scrolling: auto;   /* turn off momentum in modal */
-  -webkit-transform: translateZ(0);
-  transform: translateZ(0);
-  will-change: transform;
-}
-
-
-/* When any popup is open, prevent page scroll (optional but helps on iOS) */
-.body-no-scroll{
-  overflow: hidden;
-  position: fixed;   /* prevents content jump on iOS */
-  width: 100%;
-}
-
-.ios-safari .event-about,
-.ios-safari .event-map{
+/* iOS specific: reduce blur to avoid paint bugs */
+.ios-safari .event-about, .ios-safari .event-map {
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
   background: rgba(255,255,255,0.06);
 }
 
-
-
-/* --- Footer --- */
-.site-footer {
-  margin-top: 40px;
-  padding: 26px 16px 40px;
-  border-top: 1px solid rgba(255,255,255,0.08);
-  background:
-    linear-gradient(to bottom, rgba(255,255,255,0.02), rgba(0,0,0,0.08));
-}
-.footer-inner {
-  max-width: 900px;
-  margin: 0 auto;
-  display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 16px 24px;
-  align-items: center;
-}
-.brand {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  font-weight: 800;
-  letter-spacing: 0.5px;
-  color: #fff;
-}
-.logo-dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  background: #00E676;
-  box-shadow: 0 0 12px #00E676;
-  display: inline-block;
-}
-.links {
-  display: inline-flex;
-  align-items: center;
-  gap: 14px;
-}
-.footer-link {
-  display: inline-flex;
-  gap: 8px;
-  align-items: center;
-  color: #cfeede;
-  text-decoration: none;
-  font-weight: 600;
-  padding: 8px 10px;
-  border-radius: 10px;
-  border: 1px solid rgba(255,255,255,0.08);
-  background: rgba(255,255,255,0.04);
-  transition: transform .1s ease, background .2s ease, border-color .2s ease;
-}
-.footer-link:hover {
-  transform: translateY(-1px);
-  background: rgba(255,255,255,0.08);
-  border-color: rgba(255,255,255,0.12);
-}
-.copy {
-  grid-column: 1 / -1;
-  color: rgba(255,255,255,0.55);
-  font-size: 13px;
-  margin-top: 2px;
+/* Map fallback */
+.map-placeholder {
+  width: 100%; height: 280px; background-color: #111; border-radius: 16px;
+  display: flex; align-items: center; justify-content: center; color: #666; font-size: 15px;
 }
 
-/* --- Mobile tweaks --- */
-@media (max-width: 768px) {
-  .event-title { font-size: 26px; }
-  .event-about,
-  .event-map { padding: 20px; }
-  .event-hero-image {
-    width: 90%;
-    max-width: 100%;
-    aspect-ratio: 16 / 9;
-    object-fit: cover;
-    border-radius: 20px;
-  }
-
-  .footer-inner {
-    grid-template-columns: 1fr;
-    text-align: center;
-  }
-  .links {
-    justify-content: center;
-    flex-wrap: wrap;
-  }
+/* === iOS-safe modal/overlay rendered via Portal === */
+.popup-overlay{
+  position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,.55);
+  z-index: 2147483647;           /* very high to beat everything */
+  overflow: hidden;              /* never 'auto' here on iOS */
+  touch-action: none;
 }
+
+.popup-modal{
+  box-sizing: border-box;
+  max-width: 640px;
+  max-height: 90dvh;
+  margin: 6vh auto;
+  padding: 16px;
+  background: rgba(24,24,36,.98);
+  border-radius: 16px;
+  overflow: auto;                /* this is the only scroller */
+  -webkit-overflow-scrolling: auto; /* disable momentum scrolling */
+}
+.popup-modal.small{ max-width:420px; }
+.popup-modal.small .muted{ color: rgba(255,255,255,.78); }
+
+/* lock page when modal open (paired with JS toggle) */
+.body-no-scroll{ overflow: hidden; position: fixed; width: 100%; }
 
 /* Waitlist banner chips */
 .waitlist-banner { display:flex; gap:8px; margin:8px 0 2px; }
@@ -336,12 +179,22 @@ body {
 .btn-wallet:hover{ box-shadow: 0 3px 14px rgba(0,0,0,.35); }
 .btn-wallet:active{ transform: translateY(1px); }
 
-/* Disabled primary */
-.btn-disabled{ opacity:.6; pointer-events:none; }
+/* Footer */
+.site-footer { margin-top: 40px; padding: 26px 16px 40px; border-top: 1px solid rgba(255,255,255,0.08);
+  background: linear-gradient(to bottom, rgba(255,255,255,0.02), rgba(0,0,0,0.08)); }
+.footer-inner { max-width: 900px; margin: 0 auto; display: grid; grid-template-columns: 1fr auto; gap: 16px 24px; align-items: center; }
+.brand { display: inline-flex; align-items: center; gap: 10px; font-weight: 800; letter-spacing: 0.5px; color: #fff; }
+.logo-dot { width: 10px; height: 10px; border-radius: 50%; background: #00E676; box-shadow: 0 0 12px #00E676; display: inline-block; }
+.links { display: inline-flex; align-items: center; gap: 14px; }
+.footer-link { display: inline-flex; gap: 8px; align-items: center; color: #cfeede; text-decoration: none; font-weight: 600; padding: 8px 10px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.08); background: rgba(255,255,255,0.04); transition: transform .1s ease, background .2s ease, border-color .2s ease; }
+.footer-link:hover { transform: translateY(-1px); background: rgba(255,255,255,0.08); border-color: rgba(255,255,255,0.12); }
+.copy { grid-column: 1 / -1; color: rgba(255,255,255,0.55); font-size: 13px; margin-top: 2px; }
 
-/* Small modal variant */
-.popup-modal.small{ max-width:420px; }
-.popup-modal.small .muted{ color: rgba(255,255,255,.78); }
-
-/* Waitlist actions */
-.waitlist-actions{ display:flex; gap:10px; justify-content:center; margin-top:8px; }
+/* Mobile */
+@media (max-width: 768px) {
+  .event-title { font-size: 26px; }
+  .event-about, .event-map { padding: 20px; }
+  .event-hero-image { width: 90%; max-width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 20px; }
+  .footer-inner { grid-template-columns: 1fr; text-align: center; }
+  .links { justify-content: center; flex-wrap: wrap; }
+}

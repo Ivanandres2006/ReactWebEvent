@@ -4,12 +4,16 @@ import { loadStripe } from '@stripe/stripe-js'
 import { Elements } from '@stripe/react-stripe-js'
 import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet'
 import L from 'leaflet'
+
 import AuthModal from '../components/AuthModal'
 import RegisterPopup from '../components/RegisterPopup'
 import StripeCardForm from '../components/StripeCardForm'
+import ModalPortal from '../components/ModalPortal'
+
 import './EventDetailPage.css'
 import defaultEvent from '../assets/defaultEvent.jpg'
 import appstoreIcon from '../assets/mac-os.png'
+
 import 'leaflet/dist/leaflet.css'
 import markerIcon2x from 'leaflet/dist/images/marker-icon-2x.png'
 import markerIcon from 'leaflet/dist/images/marker-icon.png'
@@ -26,7 +30,6 @@ L.Icon.Default.mergeOptions({
 const stripePromise = loadStripe('pk_test_51RcVeBBU1Fa59mBKHvngFVDwq8gBiZ863TKO6okEHBj28VjLiYAUQ5OhDs0k1WEyfqXRmtziurmLYBqlQfyOOl6C007EKiWppc')
 const API = 'https://backendevent-etce.onrender.com'
 
-// ---------- Apple detection & Wallet helpers ----------
 const isApplePlatform = () => {
   const ua = navigator.userAgent || ''
   return /iPhone|iPad|iPod|Macintosh/.test(ua)
@@ -34,7 +37,6 @@ const isApplePlatform = () => {
 const canShowAppleWallet = () => isApplePlatform()
 const PASS_URL_FOR_EVENT = (eventId) => `${API}/api/passes/event/${encodeURIComponent(eventId)}`
 
-// ---------- Pretty date ----------
 function formatDate(isoString) {
   const date = new Date(isoString)
   return date.toLocaleString('en-US', {
@@ -61,49 +63,44 @@ export default function EventDetailPage() {
   const [showPopup, setShowPopup] = useState(false)
   const [clientSecret, setClientSecret] = useState(null)
 
-  // tiers
   const [tiers, setTiers] = useState([])
   const [tiersLoading, setTiersLoading] = useState(false)
   const [tiersErr, setTiersErr] = useState(null)
 
-  // one-shot checkout lock
   const [checkingOut, setCheckingOut] = useState(false)
   const clickedOnceRef = useRef(false)
 
-  // Waitlist (listOnly)
-  const [waitlistStatus, setWaitlistStatus] = useState(null) // null | "pending" | "approved" | "denied"
+  const [waitlistStatus, setWaitlistStatus] = useState(null)
   const [waitlistModal, setWaitlistModal] = useState(false)
   const [waitlistBusy, setWaitlistBusy] = useState(false)
 
   const token = getAccessToken()
   const isLoggedIn = !!token
-
   const requiresWaitlist = !!(event?.listOnly)
 
-  // ---- Apple Wallet visibility
   const showAppleWallet = useMemo(() => canShowAppleWallet() && isLoggedIn, [isLoggedIn])
 
+  // modal state → lock scroll + disable backdrop-filter globally (for iOS)
   useEffect(() => {
-    const open = waitlistModal || showPopup || !!clientSecret
-    document.body.classList.toggle('body-no-scroll', open)
-    return () => document.body.classList.remove('body-no-scroll')
+    const anyOpen = waitlistModal || showPopup || !!clientSecret
+    document.body.classList.toggle('body-no-scroll', anyOpen)
+    document.documentElement.classList.toggle('modal-open', anyOpen)
+    return () => {
+      document.body.classList.remove('body-no-scroll')
+      document.documentElement.classList.remove('modal-open')
+    }
   }, [waitlistModal, showPopup, clientSecret])
 
-  // iOS Safari detector → adds a class to <html>
-useEffect(() => {
-  const ua = navigator.userAgent || '';
-  const isIOSSafari =
-    /iP(hone|od|ad)/.test(ua) && /WebKit/.test(ua) && !/CriOS|FxiOS/.test(ua);
-  if (isIOSSafari) document.documentElement.classList.add('ios-safari');
-}, []);
-
-  
-  // save referral
+  // detect iOS Safari (to relax blur effects)
   useEffect(() => {
-    if (refCode) localStorage.setItem('wknd_ref', refCode)
-  }, [refCode])
+    const ua = navigator.userAgent || ''
+    const isIOSSafari = /iP(hone|od|ad)/.test(ua) && /WebKit/.test(ua) && !/CriOS|FxiOS/.test(ua)
+    if (isIOSSafari) document.documentElement.classList.add('ios-safari')
+  }, [])
 
-  // Load user info
+  useEffect(() => { if (refCode) localStorage.setItem('wknd_ref', refCode) }, [refCode])
+
+  // user info
   useEffect(() => {
     if (!isLoggedIn) return
     fetchWithAuth(`${API}/user/me`)
@@ -124,7 +121,7 @@ useEffect(() => {
       .catch(() => {})
   }, [isLoggedIn])
 
-  // Load event (public)
+  // event
   useEffect(() => {
     if (!id) return
     ;(async () => {
@@ -141,7 +138,7 @@ useEffect(() => {
     })()
   }, [id])
 
-  // Load waitlist status (if listOnly + logged in)
+  // waitlist status
   useEffect(() => {
     if (!event?.listOnly || !isLoggedIn) return
     ;(async () => {
@@ -160,7 +157,7 @@ useEffect(() => {
     })()
   }, [event?.listOnly, isLoggedIn, id])
 
-  // Load tiers when popup opens (auth first)
+  // tiers when popup opens
   useEffect(() => {
     if (!showPopup || !id) return
     const lsKey = `lastTier:${id}`
@@ -187,9 +184,7 @@ useEffect(() => {
       setTiersLoading(true); setTiersErr(null)
       try {
         let res = await fetchWithAuth(`${API}/events/${id}/tiers`)
-        if (res.status === 404) {
-          pickDefault(event?.ticketTiers || []); return
-        }
+        if (res.status === 404) { pickDefault(event?.ticketTiers || []); return }
         if (!res.ok) throw new Error(`Tiers fetch failed: ${res.status}`)
         const data = await res.json()
         const list = Array.isArray(data) ? data : []
@@ -206,12 +201,10 @@ useEffect(() => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showPopup, id])
 
-  // ---- VES rate in event
   const vesRate =
     event?.vesRate ?? event?.ves_rate ?? event?.vesPerUsd ?? event?.ves_per_usd ??
     event?.fxVesPerUsd ?? event?.exchangeRateVes ?? event?.exchange_rate_ves ?? null
 
-  // Build payment options for popup
   const payments = event ? {
     country: event.country || '',
     currency: event.currency || '',
@@ -227,7 +220,7 @@ useEffect(() => {
       phone: event.pagoMovilPhone || '',
       ci: event.pagoMovilCi || '',
       bank: event.pagoMovilBank || '',
-      rate: typeof vesRate === 'number' ? vesRate : undefined, // VES per 1 USD
+      rate: typeof vesRate === 'number' ? vesRate : undefined,
       country: event.country || ''
     },
     cash: {
@@ -238,7 +231,7 @@ useEffect(() => {
 
   async function uploadProof(ticketId, file, token) {
     const fd = new FormData()
-    fd.append('file', file, file.name || 'receipt.jpg') // field name MUST be "file"
+    fd.append('file', file, file.name || 'receipt.jpg')
     try {
       const res = await fetch(`${API}/api/tickets/${ticketId}/proof`, {
         method: 'POST',
@@ -257,54 +250,48 @@ useEffect(() => {
     }
   }
 
-  // ---- Waitlist actions
   const openWaitlistModal = () => setWaitlistModal(true)
   const closeWaitlistModal = () => setWaitlistModal(false)
 
-// one-frame paint yield (safest across browsers)
-const nextFrame = () => new Promise(resolve => requestAnimationFrame(() => resolve()));
+  const nextFrame = () => new Promise(resolve => requestAnimationFrame(() => resolve()))
 
-const requestWaitlistAccess = async () => {
-  if (!isLoggedIn || waitlistBusy) { if (!isLoggedIn) setShowAuth(true); return }
-  try {
-    setWaitlistBusy(true);
-    await nextFrame(); // let iOS paint the overlay before the network work
+  const requestWaitlistAccess = async () => {
+    if (!isLoggedIn || waitlistBusy) { if (!isLoggedIn) setShowAuth(true); return }
+    try {
+      setWaitlistBusy(true)
+      await nextFrame()
 
-    const name = (localStorage.getItem('fullName') || 'AnonymousUser').trim();
-    const storedRef = localStorage.getItem('wknd_ref');
-    const ref = (refCode || storedRef || '').trim();
+      const name = (localStorage.getItem('fullName') || 'AnonymousUser').trim()
+      const storedRef = localStorage.getItem('wknd_ref')
+      const ref = (refCode || storedRef || '').trim()
 
-    const body = new URLSearchParams();
-    body.set('fullName', name);
-    if (ref) body.set('ref', ref);
+      const body = new URLSearchParams()
+      body.set('fullName', name)
+      if (ref) body.set('ref', ref)
 
-    const res = await fetchWithAuth(`${API}/events/${id}/waitlist/request`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: body.toString()
-    });
+      const res = await fetchWithAuth(`${API}/events/${id}/waitlist/request`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: body.toString()
+      })
 
-    if ([200,201,204,409].includes(res.status)) { setWaitlistStatus('pending'); return }
-    if (res.status === 401) { setShowAuth(true); return }
+      if ([200,201,204,409].includes(res.status)) { setWaitlistStatus('pending'); return }
+      if (res.status === 401) { setShowAuth(true); return }
 
-    if ([400,415].includes(res.status)) {
-      const retry = await fetchWithAuth(`${API}/events/${id}/waitlist/request`, { method:'POST' });
-      if (retry.ok) { setWaitlistStatus('pending'); return }
+      if ([400,415].includes(res.status)) {
+        const retry = await fetchWithAuth(`${API}/events/${id}/waitlist/request`, { method:'POST' })
+        if (retry.ok) { setWaitlistStatus('pending'); return }
+      }
+
+      const msg = await res.text().catch(()=> '')
+      console.warn(msg || `Could not submit request (HTTP ${res.status}).`)
+    } catch (e) {
+      console.error('Waitlist request error:', e)
+    } finally {
+      setWaitlistBusy(false)
     }
-
-    const msg = await res.text().catch(()=> '');
-    // show inline message instead of alert (alerts can still glitch iOS)
-    console.warn(msg || `Could not submit request (HTTP ${res.status}).`);
-  } catch (e) {
-    console.error('Waitlist request error:', e);
-  } finally {
-    setWaitlistBusy(false);
   }
-};
 
-  
-
-  // Handle checkout
   const handleBuy = async (method = 'card', extras = {}) => {
     if (checkingOut || clickedOnceRef.current) return
     clickedOnceRef.current = true
@@ -315,7 +302,6 @@ const requestWaitlistAccess = async () => {
       if (!email) { alert('Email not available. Please log in again.'); setShowAuth(true); return }
       if (!selectedTierId) { alert('Please select a ticket tier'); return }
 
-      // Gate by waitlist
       if (requiresWaitlist && waitlistStatus !== 'approved') {
         openWaitlistModal()
         return
@@ -341,13 +327,11 @@ const requestWaitlistAccess = async () => {
 
       const data = await res.json()
 
-      // Free flow
       if (data.free === true || data.free === 'true') {
         window.location.href = `/#/success?eventId=${id}`
         return
       }
 
-      // Manual flow (Zelle / Pago Móvil / Cash)
       if (data.manual === true) {
         const ids = Array.isArray(data.ticketIds) && data.ticketIds.length
           ? data.ticketIds
@@ -365,12 +349,10 @@ const requestWaitlistAccess = async () => {
         setShowPopup(false)
         const methodLower = String(method || 'card').toLowerCase()
         const since = Date.now()
-        window.location.href =
-          `/#/success?eventId=${id}&pending=${encodeURIComponent(methodLower)}&since=${since}`
+        window.location.href = `/#/success?eventId=${id}&pending=${encodeURIComponent(methodLower)}&since=${since}`
         return
       }
 
-      // Card flow
       if (data.clientSecret) {
         setClientSecret(data.clientSecret)
         setShowPopup(false)
@@ -387,7 +369,6 @@ const requestWaitlistAccess = async () => {
     }
   }
 
-  // ---- Apple Wallet
   const handleAddToAppleWallet = async () => {
     if (!isLoggedIn) { setShowAuth(true); return }
     try {
@@ -426,8 +407,6 @@ const requestWaitlistAccess = async () => {
   if (error) return <div className="event-error">Failed to load event. Please try again later.</div>
   if (!event) return <div className="event-loading">Loading event...</div>
 
-  // ---- Register visibility / label with waitlist
-  const canRegister = !requiresWaitlist || waitlistStatus === 'approved'
   const registerLabel = requiresWaitlist
     ? (waitlistStatus === 'approved' ? 'Register' :
        waitlistStatus === 'pending' ? 'Request Pending' :
@@ -443,7 +422,6 @@ const requestWaitlistAccess = async () => {
     setShowPopup(true)
   }
 
-  // ---- VES for popup (same)
   const vesRateInEvent =
     event?.vesRate ?? event?.ves_rate ?? event?.vesPerUsd ?? event?.ves_per_usd ??
     event?.fxVesPerUsd ?? event?.exchangeRateVes ?? event?.exchange_rate_ves ?? null
@@ -500,7 +478,6 @@ const requestWaitlistAccess = async () => {
         <p className="event-date">📅 {event?.dateTime ? formatDate(event.dateTime) : ''}</p>
         <p className="event-location">📍 {event?.location || ''}</p>
 
-        {/* Waitlist banner */}
         {requiresWaitlist && (
           <div className="waitlist-banner">
             {waitlistStatus === 'approved' && <span className="chip ok">✅ Approved</span>}
@@ -511,7 +488,7 @@ const requestWaitlistAccess = async () => {
         )}
 
         <div className="event-actions">
-        <button className="btn-primary" onClick={onRegisterClick}>
+          <button className="btn-primary" onClick={onRegisterClick}>
             {registerLabel}
           </button>
 
@@ -597,78 +574,82 @@ const requestWaitlistAccess = async () => {
         </div>
       </footer>
 
-      {/* Waitlist modal */}
+      {/* Waitlist modal (portal) */}
       {waitlistModal && (
-        <div className="popup-overlay" onClick={closeWaitlistModal}>
-          <div className="popup-modal small" onClick={(e)=>e.stopPropagation()}>
-            <h3>List-Only Access</h3>
-            {waitlistStatus === 'approved' && (
-              <p className="muted">✅ You’re approved. You can register now.</p>
-            )}
-            {waitlistStatus === 'pending' && (
-              <p className="muted">⏳ Your request is pending. We’ll notify you when the organizer approves.</p>
-            )}
-            {waitlistStatus === 'denied' && (
-              <p className="muted">❌ The organizer denied access for this event.</p>
-            )}
-            {!waitlistStatus && (
-              <p className="muted">This event requires approval. Request access to continue.</p>
-            )}
+        <ModalPortal>
+          <div className="popup-overlay" onClick={closeWaitlistModal}>
+            <div className="popup-modal small" onClick={(e)=>e.stopPropagation()}>
+              <h3>List-Only Access</h3>
+              {waitlistStatus === 'approved' && <p className="muted">✅ You’re approved. You can register now.</p>}
+              {waitlistStatus === 'pending' && <p className="muted">⏳ Your request is pending. We’ll notify you when the organizer approves.</p>}
+              {waitlistStatus === 'denied' && <p className="muted">❌ The organizer denied access for this event.</p>}
+              {!waitlistStatus && <p className="muted">This event requires approval. Request access to continue.</p>}
 
-            <div className="waitlist-actions">
-              {!waitlistStatus && (
-                <button className="btn-primary" disabled={waitlistBusy} onClick={requestWaitlistAccess}>
-                  {waitlistBusy ? 'Sending…' : 'Request Access'}
-                </button>
-              )}
-              <button className="btn-secondary" onClick={closeWaitlistModal}>Close</button>
+              <div className="waitlist-actions">
+                {!waitlistStatus && (
+                  <button className="btn-primary" disabled={waitlistBusy} onClick={requestWaitlistAccess}>
+                    {waitlistBusy ? 'Sending…' : 'Request Access'}
+                  </button>
+                )}
+                <button className="btn-secondary" onClick={closeWaitlistModal}>Close</button>
+              </div>
             </div>
           </div>
-        </div>
+        </ModalPortal>
       )}
 
+      {/* Register popup (portal) */}
       {showPopup && (
-        <RegisterPopup
-          eventId={id}
-          tiers={tiers.length ? tiers : (event.ticketTiers || [])}
-          loading={tiersLoading}
-          error={tiersErr}
-          selectedTierId={selectedTierId}
-          quantity={quantity}
-          submitting={checkingOut}
-          payments={popupPayments}
-          onClose={() => {
-            setShowPopup(false)
-            setSelectedTierId(null)
-            setCheckingOut(false)
-            clickedOnceRef.current = false
-          }}
-          onSelectTier={(tierId) => {
-            setSelectedTierId(tierId)
-            try { localStorage.setItem(`lastTier:${id}`, String(tierId)) } catch {}
-          }}
-          onQuantityChange={setQuantity}
-          onPay={(method, extras) => handleBuy(method ?? 'card', extras)}
-        />
+        <ModalPortal>
+          <div className="popup-overlay" onClick={()=>setShowPopup(false)}>
+            <div className="popup-modal" onClick={(e)=>e.stopPropagation()}>
+              <RegisterPopup
+                eventId={id}
+                tiers={tiers.length ? tiers : (event.ticketTiers || [])}
+                loading={tiersLoading}
+                error={tiersErr}
+                selectedTierId={selectedTierId}
+                quantity={quantity}
+                submitting={checkingOut}
+                payments={popupPayments}
+                onClose={() => {
+                  setShowPopup(false)
+                  setSelectedTierId(null)
+                  setCheckingOut(false)
+                  clickedOnceRef.current = false
+                }}
+                onSelectTier={(tierId) => {
+                  setSelectedTierId(tierId)
+                  try { localStorage.setItem(`lastTier:${id}`, String(tierId)) } catch {}
+                }}
+                onQuantityChange={setQuantity}
+                onPay={(method, extras) => handleBuy(method ?? 'card', extras)}
+              />
+            </div>
+          </div>
+        </ModalPortal>
       )}
 
+      {/* Stripe modal (portal) */}
       {clientSecret && (
-        <div className="popup-overlay" onClick={() => setClientSecret(null)}>
-          <div className="popup-modal" onClick={(e) => e.stopPropagation()}>
-            <Elements stripe={stripePromise} options={{ clientSecret }}>
-              <StripeCardForm
-                clientSecret={clientSecret}
-                email={email}
-                onSuccess={async (paymentIntentId) => {
-                  await fetchWithAuth(`${API}/api/tickets/confirm?paymentIntentId=${encodeURIComponent(paymentIntentId)}`, {
-                    method: 'POST'
-                  })
-                  window.location.href = `/#/success?eventId=${id}&pi=${encodeURIComponent(paymentIntentId)}`
-                }}
-              />
-            </Elements>
+        <ModalPortal>
+          <div className="popup-overlay" onClick={() => setClientSecret(null)}>
+            <div className="popup-modal" onClick={(e) => e.stopPropagation()}>
+              <Elements stripe={stripePromise} options={{ clientSecret }}>
+                <StripeCardForm
+                  clientSecret={clientSecret}
+                  email={email}
+                  onSuccess={async (paymentIntentId) => {
+                    await fetchWithAuth(`${API}/api/tickets/confirm?paymentIntentId=${encodeURIComponent(paymentIntentId)}`, {
+                      method: 'POST'
+                    })
+                    window.location.href = `/#/success?eventId=${id}&pi=${encodeURIComponent(paymentIntentId)}`
+                  }}
+                />
+              </Elements>
+            </div>
           </div>
-        </div>
+        </ModalPortal>
       )}
     </div>
   )
