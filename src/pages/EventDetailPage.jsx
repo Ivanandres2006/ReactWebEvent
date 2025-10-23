@@ -83,6 +83,12 @@ export default function EventDetailPage() {
   // ---- Apple Wallet visibility
   const showAppleWallet = useMemo(() => canShowAppleWallet() && isLoggedIn, [isLoggedIn])
 
+  useEffect(() => {
+    const open = waitlistModal || showPopup || !!clientSecret
+    document.body.classList.toggle('body-no-scroll', open)
+    return () => document.body.classList.remove('body-no-scroll')
+  }, [waitlistModal, showPopup, clientSecret])
+  
   // save referral
   useEffect(() => {
     if (refCode) localStorage.setItem('wknd_ref', refCode)

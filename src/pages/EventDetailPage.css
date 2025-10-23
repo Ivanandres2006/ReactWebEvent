@@ -17,6 +17,12 @@ body {
   color: #fff;
 }
 
+.body-no-scroll {
+  overflow: hidden;
+  height: 100%;
+}
+
+
 /* Optional: tint scrollbars (desktop) */
 * {
   scrollbar-width: thin;
@@ -188,18 +194,29 @@ body {
 }
 
 /* --- Modal (Register/Stripe) --- */
+/* Overlay: fixed, NOT scrollable (prevents iOS blank screen) */
 .popup-overlay {
   position: fixed;
   inset: 0;
   background: rgba(0, 0, 0, .55);
-  overflow: auto;                   /* modal itself can scroll */
-  -webkit-overflow-scrolling: touch;
+  overflow: hidden;                 /* <-- was auto */
   z-index: 9999;
+
+  /* iOS Safari compositing guards */
+  -webkit-transform: translateZ(0);
+  transform: translateZ(0);
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
 }
+
+/* Modal: the only scrollable region */
 .popup-modal {
   max-height: 90dvh;
-  overflow: auto;
+  overflow: auto;                   /* scroll here instead */
+  -webkit-overflow-scrolling: touch;/* momentum scroll in iOS */
+  border-radius: 16px;
 }
+
 
 /* --- Footer --- */
 .site-footer {
