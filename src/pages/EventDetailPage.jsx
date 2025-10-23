@@ -491,7 +491,7 @@ export default function EventDetailPage() {
         )}
 
         <div className="event-actions">
-          <button className={`btn-primary ${!canRegister ? 'btn-disabled' : ''}`} onClick={onRegisterClick}>
+        <button className="btn-primary" onClick={onRegisterClick}>
             {registerLabel}
           </button>
 
