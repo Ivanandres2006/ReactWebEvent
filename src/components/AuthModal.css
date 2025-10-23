@@ -1,95 +1,109 @@
-.auth-modal-overlay {
-    position: fixed;
-    inset: 0;
-    background: rgba(0, 0, 0, 0.3);
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 1000;
-  }
-  
-  
-  .auth-modal-container {
-    background: linear-gradient(135deg, #0a0f2c, #000000);
-    color: white;
-    padding: 2rem;
-    border-radius: 16px;
-    width: 90%;
-    max-width: 400px;
-    box-shadow: 0 10px 30px rgba(0, 255, 150, 0.1);
-    position: relative;
-    animation: fadeIn 0.4s ease;
-  }
-  
-  .auth-modal-container h2 {
-    font-size: 1.6rem;
-    font-weight: bold;
-    text-align: center;
-    margin-bottom: 1rem;
-  }
-  
-  .auth-modal-container form {
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
-  }
-  
-  .auth-modal-container input {
-    padding: 12px 14px;
-    border: 1px solid #ffffff33;
-    border-radius: 10px;
-    background: rgba(255, 255, 255, 0.05);
-    color: white;
-    font-size: 1rem;
-  }
-  
-  .auth-modal-container button {
-    padding: 12px;
-    background: #39ff90;
-    border: none;
-    border-radius: 999px;
-    color: black;
-    font-weight: bold;
-    font-size: 1rem;
-    cursor: pointer;
-    transition: transform 0.2s ease;
-  }
-  
-  .auth-modal-container button:hover {
-    transform: scale(1.03);
-  }
-  
-  .toggle-text {
-    text-align: center;
-    margin-top: 1rem;
-    font-size: 0.9rem;
-    color: #ccc;
-  }
-  
-  .toggle-text span {
-    color: #39ff90;
-    cursor: pointer;
-    font-weight: 600;
-    margin-left: 4px;
-  }
-  
-  .subtext {
-    text-align: center;
-    font-size: 0.9rem;
-    margin-bottom: 1rem;
-    color: #bbb;
-  }
-  
-  @keyframes fadeIn {
-    from {
-      opacity: 0;
-      transform: scale(0.95);
-    }
-    to {
-      opacity: 1;
-      transform: scale(1);
-    }
-  }
-  
+/* SAFARI-SAFE OVERLAY (NO BLUR) */
+.auth-overlay-safe{
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.45);      /* no backdrop-filter here */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+
+  /* create stable, isolated layer to avoid iOS blank */
+  isolation: isolate;
+  contain: paint;
+  -webkit-transform: translateZ(0);
+  transform: translateZ(0);
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+
+/* Body lock when any modal is open */
+.body-no-scroll{
+  overflow: hidden;
+  position: fixed;
+  width: 100%;
+}
+
+/* CONTENT CARD (kept from your styles, with small tweaks) */
+.auth-modal-container {
+  background: linear-gradient(135deg, #0a0f2c, #000000);
+  color: white;
+  padding: 2rem;
+  border-radius: 16px;
+  width: 90%;
+  max-width: 400px;
+  box-shadow: 0 10px 30px rgba(0, 255, 150, 0.1);
+  position: relative;
+  animation: fadeIn 0.3s ease;
+  max-height: 90dvh;
+  overflow: auto;
+  -webkit-overflow-scrolling: auto; /* disable momentum scrolling inside modal */
+}
+
+.auth-modal-container h2 {
+  font-size: 1.6rem;
+  font-weight: bold;
+  text-align: center;
+  margin-bottom: 1rem;
+}
+
+.auth-modal-container form {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.auth-modal-container input {
+  padding: 12px 14px;
+  border: 1px solid #ffffff33;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.05);
+  color: white;
+  font-size: 1rem;
+}
+
+.auth-modal-container button {
+  padding: 12px;
+  background: #39ff90;
+  border: none;
+  border-radius: 999px;
+  color: black;
+  font-weight: bold;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: transform 0.2s ease;
+}
+
+.auth-modal-container button:hover { transform: scale(1.03); }
+
+.toggle-text {
+  text-align: center;
+  margin-top: 1rem;
+  font-size: 0.9rem;
+  color: #ccc;
+}
+
+.toggle-text span {
+  color: #39ff90;
+  cursor: pointer;
+  font-weight: 600;
+  margin-left: 4px;
+}
+
+.subtext {
+  text-align: center;
+  font-size: 0.9rem;
+  margin-bottom: 1rem;
+  color: #bbb;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: scale(.97); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+/* if your app adds .ios-safari to <html>, keep any accidental blur off entirely */
+.ios-safari .auth-overlay-safe {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}

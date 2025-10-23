@@ -1,0 +1,52 @@
+/* Body freeze when a modal is open (prevents iOS fixed/scroll bugs) */
+.body-no-scroll{
+    overflow: hidden;
+    position: fixed;
+    width: 100%;
+  }
+  
+  /* FIX: stable, isolated, fixed overlay (no page scroll) */
+  .safe-overlay{
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,.55);
+    overflow: hidden;
+    z-index: 9999;
+  
+    isolation: isolate;       /* new stacking context */
+    contain: paint;           /* limit invalidation */
+    -webkit-transform: translateZ(0);
+    transform: translateZ(0);
+    will-change: transform;
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
+  }
+  
+  /* The modal itself can scroll; momentum off to avoid iOS white flashes */
+  .safe-modal{
+    max-height: 90dvh;
+    overflow: auto;
+    -webkit-overflow-scrolling: auto;
+  
+    margin: 10vh auto;
+    width: min(720px, 92%);
+    background: rgba(21,21,33,.96);
+    border-radius: 16px;
+    padding: 20px;
+    box-shadow: 0 8px 30px rgba(0,0,0,.35);
+  
+    -webkit-transform: translateZ(0);
+    transform: translateZ(0);
+    will-change: transform;
+  }
+  
+  .safe-modal--sm{
+    width: min(440px, 92%);
+  }
+  
+  /* If any descendant tries to use heavy blur, neutralize it on iOS Safari */
+  .ios-safari .safe-modal{
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+  

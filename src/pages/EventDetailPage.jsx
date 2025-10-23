@@ -20,7 +20,6 @@ import markerShadow from 'leaflet/dist/images/marker-shadow.png'
 
 import { fetchWithAuth, getAccessToken } from '../lib/authClient'
 
-// Leaflet default marker
 delete L.Icon.Default.prototype._getIconUrl
 L.Icon.Default.mergeOptions({
   iconRetinaUrl: markerIcon2x,
@@ -31,7 +30,6 @@ L.Icon.Default.mergeOptions({
 const stripePromise = loadStripe('pk_test_51RcVeBBU1Fa59mBKHvngFVDwq8gBiZ863TKO6okEHBj28VjLiYAUQ5OhDs0k1WEyfqXRmtziurmLYBqlQfyOOl6C007EKiWppc')
 const API = 'https://backendevent-etce.onrender.com'
 
-// ---------- Helpers ----------
 const isApplePlatform = () => {
   const ua = navigator.userAgent || ''
   return /iPhone|iPad|iPod|Macintosh/.test(ua)
@@ -53,10 +51,12 @@ function formatDate(isoString) {
 export default function EventDetailPage() {
   const { id } = useParams()
   const [searchParams] = useSearchParams()
-  const refCode = searchParams.get('ref') ? decodeURIComponent(searchParams.get('ref')) : null
+  const rawRef = searchParams.get('ref')
+  const refCode = rawRef ? decodeURIComponent(rawRef) : null
 
   const [event, setEvent] = useState(null)
   const [error, setError] = useState(false)
+
   const [showAuth, setShowAuth] = useState(false)
   const [email, setEmail] = useState('')
   const [selectedTierId, setSelectedTierId] = useState(null)
@@ -64,43 +64,38 @@ export default function EventDetailPage() {
   const [showPopup, setShowPopup] = useState(false)
   const [clientSecret, setClientSecret] = useState(null)
 
-  // tiers
   const [tiers, setTiers] = useState([])
   const [tiersLoading, setTiersLoading] = useState(false)
   const [tiersErr, setTiersErr] = useState(null)
 
-  // one-shot checkout lock
   const [checkingOut, setCheckingOut] = useState(false)
   const clickedOnceRef = useRef(false)
 
-  // Waitlist (listOnly)
-  const [waitlistStatus, setWaitlistStatus] = useState(null) // null | "pending" | "approved" | "denied"
+  const [waitlistStatus, setWaitlistStatus] = useState(null)
   const [waitlistModal, setWaitlistModal] = useState(false)
   const [waitlistBusy, setWaitlistBusy] = useState(false)
 
   const token = getAccessToken()
   const isLoggedIn = !!token
   const requiresWaitlist = !!(event?.listOnly)
-
-  // Apple Wallet visibility
   const showAppleWallet = useMemo(() => canShowAppleWallet() && isLoggedIn, [isLoggedIn])
 
-  // Freeze body scroll when any modal is open
-  useEffect(() => {
-    const open = waitlistModal || showPopup || !!clientSecret
-    document.body.classList.toggle('body-no-scroll', open)
-    return () => document.body.classList.remove('body-no-scroll')
-  }, [waitlistModal, showPopup, clientSecret])
-
-  // iOS Safari detector → adds a class to <html> to disable backdrop blur on those devices
+  // Mark iOS Safari on <html> so CSS can disable blur/backdrop
   useEffect(() => {
     const ua = navigator.userAgent || ''
     const isIOSSafari = /iP(hone|od|ad)/.test(ua) && /WebKit/.test(ua) && !/CriOS|FxiOS/.test(ua)
     if (isIOSSafari) document.documentElement.classList.add('ios-safari')
   }, [])
 
-  // save referral
+  // Save referral
   useEffect(() => { if (refCode) localStorage.setItem('wknd_ref', refCode) }, [refCode])
+
+  // Body lock whenever any modal is open (auth, waitlist, register, stripe)
+  useEffect(() => {
+    const open = showAuth || waitlistModal || showPopup || !!clientSecret
+    document.body.classList.toggle('body-no-scroll', open)
+    return () => document.body.classList.remove('body-no-scroll')
+  }, [showAuth, waitlistModal, showPopup, clientSecret])
 
   // Load user info
   useEffect(() => {
@@ -242,16 +237,8 @@ export default function EventDetailPage() {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
         body: fd,
       })
-      if (!res.ok) {
-        const txt = await res.text().catch(() => '')
-        console.warn(`Receipt upload failed for #${ticketId}: ${res.status} ${txt}`)
-        return false
-      }
-      return true
-    } catch (e) {
-      console.warn(`Receipt upload error for #${ticketId}:`, e)
-      return false
-    }
+      return res.ok
+    } catch { return false }
   }
 
   // ---- Waitlist actions
@@ -264,8 +251,7 @@ export default function EventDetailPage() {
     if (!isLoggedIn || waitlistBusy) { if (!isLoggedIn) setShowAuth(true); return }
     try {
       setWaitlistBusy(true)
-      await nextFrame() // ensure overlay is painted before network
-
+      await nextFrame()
       const name = (localStorage.getItem('fullName') || 'AnonymousUser').trim()
       const storedRef = localStorage.getItem('wknd_ref')
       const ref = (refCode || storedRef || '').trim()
@@ -287,11 +273,6 @@ export default function EventDetailPage() {
         const retry = await fetchWithAuth(`${API}/events/${id}/waitlist/request`, { method:'POST' })
         if (retry.ok) { setWaitlistStatus('pending'); return }
       }
-
-      const msg = await res.text().catch(()=> '')
-      console.warn(msg || `Could not submit request (HTTP ${res.status}).`)
-    } catch (e) {
-      console.error('Waitlist request error:', e)
     } finally {
       setWaitlistBusy(false)
     }
@@ -308,11 +289,7 @@ export default function EventDetailPage() {
       if (!email) { alert('Email not available. Please log in again.'); setShowAuth(true); return }
       if (!selectedTierId) { alert('Please select a ticket tier'); return }
 
-      // Gate by waitlist
-      if (requiresWaitlist && waitlistStatus !== 'approved') {
-        openWaitlistModal()
-        return
-      }
+      if (requiresWaitlist && waitlistStatus !== 'approved') { openWaitlistModal(); return }
 
       const storedRef = localStorage.getItem('wknd_ref')
       const body = {
@@ -334,13 +311,11 @@ export default function EventDetailPage() {
 
       const data = await res.json()
 
-      // Free flow
       if (data.free === true || data.free === 'true') {
         window.location.href = `/#/success?eventId=${id}`
         return
       }
 
-      // Manual flow
       if (data.manual === true) {
         const ids = Array.isArray(data.ticketIds) && data.ticketIds.length
           ? data.ticketIds
@@ -358,7 +333,6 @@ export default function EventDetailPage() {
         return
       }
 
-      // Card flow
       if (data.clientSecret) {
         setClientSecret(data.clientSecret)
         setShowPopup(false)
@@ -375,7 +349,6 @@ export default function EventDetailPage() {
     }
   }
 
-  // ---- Apple Wallet
   const handleAddToAppleWallet = async () => {
     if (!isLoggedIn) { setShowAuth(true); return }
     try {
@@ -400,21 +373,9 @@ export default function EventDetailPage() {
     }
   }
 
-  if (showAuth && !isLoggedIn) {
-    return (
-      <AuthModal
-        onClose={() => {
-          setShowAuth(false)
-          window.location.reload()
-        }}
-      />
-    )
-  }
-
   if (error) return <div className="event-error">Failed to load event. Please try again later.</div>
   if (!event) return <div className="event-loading">Loading event...</div>
 
-  // ---- Register visibility / label with waitlist
   const canRegister = !requiresWaitlist || waitlistStatus === 'approved'
   const registerLabel = requiresWaitlist
     ? (waitlistStatus === 'approved' ? 'Register'
@@ -429,7 +390,6 @@ export default function EventDetailPage() {
     setShowPopup(true)
   }
 
-  // ---- VES for popup
   const vesRateInEvent =
     event?.vesRate ?? event?.ves_rate ?? event?.vesPerUsd ?? event?.ves_per_usd ??
     event?.fxVesPerUsd ?? event?.exchangeRateVes ?? event?.exchange_rate_ves ?? null
@@ -452,10 +412,7 @@ export default function EventDetailPage() {
       rate: typeof vesRateInEvent === 'number' ? vesRateInEvent : undefined,
       country: event.country || ''
     },
-    cash: {
-      enabled: !!event.allowCash,
-      note: event.cashNote || '',
-    },
+    cash: { enabled: !!event.allowCash, note: event.cashNote || '' },
   } : null
 
   return (
@@ -497,7 +454,6 @@ export default function EventDetailPage() {
 
         <div className="event-actions">
           <button className="btn-primary" onClick={onRegisterClick}>{registerLabel}</button>
-
           <button
             className="btn-secondary"
             onClick={() => {
@@ -579,7 +535,16 @@ export default function EventDetailPage() {
         </div>
       </footer>
 
-      {/* Waitlist modal */}
+      {/* AUTH MODAL — safe overlay (no early return) */}
+      <AuthModal
+        isOpen={showAuth && !isLoggedIn}
+        onClose={() => {
+          setShowAuth(false)
+          window.location.reload()
+        }}
+      />
+
+      {/* WAITLIST MODAL — keep your existing popup, it now benefits from body lock */}
       {waitlistModal && (
         <div className="popup-overlay" onClick={closeWaitlistModal}>
           <div className="popup-modal small" onClick={(e)=>e.stopPropagation()}>
@@ -609,6 +574,7 @@ export default function EventDetailPage() {
         </div>
       )}
 
+      {/* REGISTER POPUP */}
       {showPopup && (
         <RegisterPopup
           eventId={id}
@@ -634,6 +600,7 @@ export default function EventDetailPage() {
         />
       )}
 
+      {/* STRIPE CARD FORM */}
       {clientSecret && (
         <div className="popup-overlay" onClick={() => setClientSecret(null)}>
           <div className="popup-modal" onClick={(e) => e.stopPropagation()}>

@@ -1,10 +1,11 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import './AuthModal.css'
 import { saveTokens } from '../lib/authClient'
 
 const API = 'https://backendevent-etce.onrender.com'
 
-export default function AuthModal({ onClose }) {
+export default function AuthModal({ isOpen, onClose }) {
   const [isLogin, setIsLogin] = useState(true)
   const [step, setStep] = useState('auth')
   const [loading, setLoading] = useState(false)
@@ -18,10 +19,18 @@ export default function AuthModal({ onClose }) {
     password: '',
   })
 
+  // Freeze body scroll while open (prevents iOS white/blank flashes)
+  useEffect(() => {
+    if (!isOpen) return
+    document.body.classList.add('body-no-scroll')
+    return () => document.body.classList.remove('body-no-scroll')
+  }, [isOpen])
+
+  if (!isOpen) return null
+
   async function handleAuthSubmit(e) {
     e.preventDefault()
     setLoading(true)
-
     try {
       const url = isLogin ? `${API}/auth/login` : `${API}/auth/register`
       const payload = isLogin
@@ -94,27 +103,60 @@ export default function AuthModal({ onClose }) {
     }
   }
 
-  return (
-    <div className="auth-modal-overlay">
-      <div className="auth-modal-container">
+  const content = (
+    <div className="auth-overlay-safe" onClick={onClose} role="presentation">
+      <div
+        className="auth-modal-container"
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-label={step === 'auth' ? (isLogin ? 'Login' : 'Sign Up') : 'Verify Email'}
+      >
         {step === 'auth' && (
           <>
             <h2>{isLogin ? 'Welcome Back' : 'Create Account'}</h2>
             <form onSubmit={handleAuthSubmit}>
               {!isLogin && (
                 <>
-                  <input type="text" placeholder="First Name" value={form.firstName}
-                    onChange={e => setForm({ ...form, firstName: e.target.value })} required />
-                  <input type="text" placeholder="Last Name" value={form.lastName}
-                    onChange={e => setForm({ ...form, lastName: e.target.value })} required />
-                  <input type="text" placeholder="Username" value={form.username}
-                    onChange={e => setForm({ ...form, username: e.target.value })} required />
+                  <input
+                    type="text"
+                    placeholder="First Name"
+                    value={form.firstName}
+                    onChange={e => setForm({ ...form, firstName: e.target.value })}
+                    required
+                  />
+                  <input
+                    type="text"
+                    placeholder="Last Name"
+                    value={form.lastName}
+                    onChange={e => setForm({ ...form, lastName: e.target.value })}
+                    required
+                  />
+                  <input
+                    type="text"
+                    placeholder="Username"
+                    value={form.username}
+                    onChange={e => setForm({ ...form, username: e.target.value })}
+                    required
+                  />
                 </>
               )}
-              <input type="text" placeholder="Email or Username" value={form.emailOrUsername}
-                onChange={e => setForm({ ...form, emailOrUsername: e.target.value })} required />
-              <input type="password" placeholder="Password" value={form.password}
-                onChange={e => setForm({ ...form, password: e.target.value })} required />
+
+              <input
+                type="text"
+                placeholder="Email or Username"
+                value={form.emailOrUsername}
+                onChange={e => setForm({ ...form, emailOrUsername: e.target.value })}
+                required
+              />
+              <input
+                type="password"
+                placeholder="Password"
+                value={form.password}
+                onChange={e => setForm({ ...form, password: e.target.value })}
+                required
+              />
+
               <button type="submit" disabled={loading}>
                 {loading ? 'Loading...' : isLogin ? 'Login' : 'Sign Up'}
               </button>
@@ -134,8 +176,14 @@ export default function AuthModal({ onClose }) {
             <h2>Verify Your Email</h2>
             <p className="subtext">We’ve sent a 6-digit code to <strong>{form.emailOrUsername}</strong></p>
             <form onSubmit={handleVerifySubmit}>
-              <input type="text" maxLength="6" placeholder="Enter verification code"
-                value={verificationCode} onChange={e => setVerificationCode(e.target.value)} required />
+              <input
+                type="text"
+                maxLength="6"
+                placeholder="Enter verification code"
+                value={verificationCode}
+                onChange={e => setVerificationCode(e.target.value)}
+                required
+              />
               <button type="submit" disabled={loading}>
                 {loading ? 'Verifying...' : 'Verify'}
               </button>
@@ -145,4 +193,6 @@ export default function AuthModal({ onClose }) {
       </div>
     </div>
   )
+
+  return createPortal(content, document.body)
 }
