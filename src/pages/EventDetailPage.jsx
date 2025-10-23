@@ -246,22 +246,39 @@ export default function EventDetailPage() {
   const openWaitlistModal = () => setWaitlistModal(true)
   const closeWaitlistModal = () => setWaitlistModal(false)
 
+  // FIX: send JSON; accept 200/201/204; treat 409 as already requested (pending)
   const requestWaitlistAccess = async () => {
-    if (!isLoggedIn) { setShowAuth(true); return }
+    if (!isLoggedIn || waitlistBusy) { if (!isLoggedIn) setShowAuth(true); return }
     try {
       setWaitlistBusy(true)
-      const name = localStorage.getItem('fullName') || 'AnonymousUser'
+      const name = (localStorage.getItem('fullName') || 'AnonymousUser').trim()
+
       const res = await fetchWithAuth(`${API}/events/${id}/waitlist/request`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: `fullName=${encodeURIComponent(name)}`
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fullName: name })
       })
-      if (res.ok) {
+
+      if (res.status === 200 || res.status === 201 || res.status === 204) {
         setWaitlistStatus('pending')
-      } else {
-        const t = await res.text().catch(()=> '')
-        alert(t || 'Could not submit request right now.')
+        return
       }
+      if (res.status === 409) { // already requested
+        setWaitlistStatus('pending')
+        return
+      }
+
+      // If the backend expects no body, fall back once without a body
+      if (res.status === 415 || res.status === 400) {
+        const retry = await fetchWithAuth(`${API}/events/${id}/waitlist/request`, { method: 'POST' })
+        if (retry.ok) { setWaitlistStatus('pending'); return }
+      }
+
+      const msg = await res.text().catch(() => '')
+      alert(msg || `Could not submit request (HTTP ${res.status}).`)
+    } catch (e) {
+      console.error('Waitlist request error:', e)
+      alert('Network error requesting access. Please try again.')
     } finally {
       setWaitlistBusy(false)
     }
@@ -312,12 +329,10 @@ export default function EventDetailPage() {
 
       // Manual flow (Zelle / Pago Móvil / Cash)
       if (data.manual === true) {
-        // collect ticket IDs
         const ids = Array.isArray(data.ticketIds) && data.ticketIds.length
           ? data.ticketIds
           : (data.ticketId != null ? [data.ticketId] : [])
 
-        // upload receipt to ALL tickets if provided
         const file = extras?.receiptFile
         if (file && ids.length > 0) {
           try {
@@ -327,7 +342,6 @@ export default function EventDetailPage() {
           }
         }
 
-        // success/pending
         setShowPopup(false)
         const methodLower = String(method || 'card').toLowerCase()
         const since = Date.now()
@@ -353,7 +367,7 @@ export default function EventDetailPage() {
     }
   }
 
-  // ---- Apple Wallet: fetch pass with auth and trigger OS add sheet (Apple only)
+  // ---- Apple Wallet
   const handleAddToAppleWallet = async () => {
     if (!isLoggedIn) { setShowAuth(true); return }
     try {
@@ -491,8 +505,6 @@ export default function EventDetailPage() {
           >
             Share
           </button>
-
-          
         </div>
 
         <div className="event-about">
