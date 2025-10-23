@@ -252,28 +252,33 @@ export default function EventDetailPage() {
     try {
       setWaitlistBusy(true)
       const name = (localStorage.getItem('fullName') || 'AnonymousUser').trim()
-
+      const storedRef = localStorage.getItem('wknd_ref')
+      const ref = (refCode || storedRef || '').trim()
+  
+      const body = new URLSearchParams()
+      body.set('fullName', name)
+      if (ref) body.set('ref', ref)
+  
       const res = await fetchWithAuth(`${API}/events/${id}/waitlist/request`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fullName: name })
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: body.toString()
       })
-
-      if (res.status === 200 || res.status === 201 || res.status === 204) {
+  
+      if (res.status === 200 || res.status === 201 || res.status === 204 || res.status === 409) {
         setWaitlistStatus('pending')
         return
       }
-      if (res.status === 409) { // already requested
-        setWaitlistStatus('pending')
+      if (res.status === 401) {
+        setShowAuth(true)
         return
       }
-
-      // If the backend expects no body, fall back once without a body
-      if (res.status === 415 || res.status === 400) {
+  
+      if (res.status === 400 || res.status === 415) {
         const retry = await fetchWithAuth(`${API}/events/${id}/waitlist/request`, { method: 'POST' })
         if (retry.ok) { setWaitlistStatus('pending'); return }
       }
-
+  
       const msg = await res.text().catch(() => '')
       alert(msg || `Could not submit request (HTTP ${res.status}).`)
     } catch (e) {
@@ -283,6 +288,7 @@ export default function EventDetailPage() {
       setWaitlistBusy(false)
     }
   }
+  
 
   // Handle checkout
   const handleBuy = async (method = 'card', extras = {}) => {
