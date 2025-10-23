@@ -5,6 +5,16 @@ import { saveTokens } from '../lib/authClient'
 
 const API = 'https://backendevent-etce.onrender.com'
 
+function compactPayload(obj) {
+  const out = {}
+  Object.entries(obj).forEach(([k, v]) => {
+    if (v === undefined || v === null) return
+    if (typeof v === 'string' && v.trim() === '') return
+    out[k] = typeof v === 'string' ? v.trim() : v
+  })
+  return out
+}
+
 export default function AuthModal({ isOpen, onClose }) {
   const [isLogin, setIsLogin] = useState(true)
   const [step, setStep] = useState('auth')
@@ -17,9 +27,9 @@ export default function AuthModal({ isOpen, onClose }) {
     username: '',
     emailOrUsername: '',
     password: '',
+    // NOTE: we are NOT asking for phone here; do not send it
   })
 
-  // Freeze body scroll while open (prevents iOS white/blank flashes)
   useEffect(() => {
     if (!isOpen) return
     document.body.classList.add('body-no-scroll')
@@ -30,35 +40,31 @@ export default function AuthModal({ isOpen, onClose }) {
 
   async function handleAuthSubmit(e) {
     e.preventDefault()
+    if (loading) return
     setLoading(true)
+
     try {
       const url = isLogin ? `${API}/auth/login` : `${API}/auth/register`
-      const payload = isLogin
-        ? { identifier: form.emailOrUsername, password: form.password }
-        : {
-            firstName: form.firstName,
-            lastName: form.lastName,
-            username: form.username,
-            email: form.emailOrUsername,
-            phone: '',
-            password: form.password,
-            useSms: false,
-          }
-
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      })
-      const data = await res.json()
-
-      if (!res.ok) {
-        alert(data.message || 'Login/Register failed')
-        setLoading(false)
-        return
-      }
 
       if (isLogin) {
+        const payload = {
+          identifier: form.emailOrUsername.trim(),
+          password: form.password,
+        }
+
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        })
+        const data = await res.json()
+
+        if (!res.ok) {
+          alert(data.message || 'Login failed')
+          setLoading(false)
+          return
+        }
+
         const access = data.accessToken || data.token || data.jwt || ''
         if (!access) {
           alert('Login succeeded but no access token was returned.')
@@ -68,11 +74,45 @@ export default function AuthModal({ isOpen, onClose }) {
         saveTokens({ accessToken: access, refreshToken: data.refreshToken })
         setLoading(false)
         onClose()
-      } else {
-        setLoading(false)
-        setStep('verify')
+        return
       }
-    } catch {
+
+      // Register (omit phone entirely unless you actually collect it)
+      const raw = {
+        firstName: form.firstName,
+        lastName: form.lastName,
+        username: form.username,
+        email: form.emailOrUsername,
+        password: form.password,
+        useSms: false,
+        // phone: undefined  // DO NOT send empty phone
+      }
+      const payload = compactPayload(raw)
+
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+      const data = await res.json()
+
+      if (!res.ok) {
+        // Many backends send “phone already in use” when they get empty string. We are not sending it anymore,
+        // but just in case the API still responds that way:
+        const msg = String(data.message || '').toLowerCase()
+        if (msg.includes('phone') && msg.includes('already')) {
+          alert('That account’s phone is already in use. Since we’re not collecting phone here, please try again or log in if you’ve already registered.')
+        } else {
+          alert(data.message || 'Registration failed')
+        }
+        setLoading(false)
+        return
+      }
+
+      // If your backend requires email verification step:
+      setLoading(false)
+      setStep('verify')
+    } catch (err) {
       setLoading(false)
       alert('Network error. Try again.')
     }
@@ -80,12 +120,16 @@ export default function AuthModal({ isOpen, onClose }) {
 
   async function handleVerifySubmit(e) {
     e.preventDefault()
+    if (loading) return
     setLoading(true)
     try {
       const res = await fetch(`${API}/auth/verify`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: form.emailOrUsername, code: verificationCode }),
+        body: JSON.stringify({
+          email: form.emailOrUsername.trim(),
+          code: verificationCode.trim(),
+        }),
       })
       const data = await res.json()
       if (!res.ok) {
