@@ -188,7 +188,7 @@ export default function AuthModal({ isOpen, onClose }) {
 
               <input
                 type="text"
-                placeholder="Email or Username"
+                placeholder="Email"
                 value={form.emailOrUsername}
                 onChange={e => setForm({ ...form, emailOrUsername: e.target.value })}
                 required
