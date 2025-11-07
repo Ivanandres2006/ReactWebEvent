@@ -58,6 +58,20 @@ export async function refreshTokens() {
 }
 
 
+async function refreshIfNeeded() {
+  const rt = getRefreshToken();
+  if (!rt) return null;
+  const res = await fetch(`${API}/auth/refresh`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ refreshToken: rt }),
+  });
+  if (!res.ok) return null;
+  const j = await res.json();
+  saveTokens({ accessToken: j.accessToken || j.token, refreshToken: j.refreshToken });
+  return getAccessToken();
+}
+
 /**
  * Use this instead of fetch() for any authenticated request.
  * - Adds Authorization header
