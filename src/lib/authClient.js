@@ -1,5 +1,5 @@
 // src/lib/authClient.js
-const API = 'https://backendevent-etce.onrender.com';
+export const API = 'https://backendevent-etce.onrender.com';
 
 export function normalizeToken(t) {
   if (!t) return '';
@@ -33,41 +33,26 @@ function isExpired(jwt) {
     if (!b) return false;
     const payload = JSON.parse(atob(b.replace(/-/g, '+').replace(/_/g, '/')));
     return payload?.exp ? Date.now() >= payload.exp * 1000 : false;
-  } catch { return false; }
+  } catch {
+    return false;
+  }
 }
 
-// authClient.ts
-export async function refreshTokens() {
-  const refreshToken = localStorage.getItem("refreshToken"); // or wherever you store it
-  if (!refreshToken) return null;
-
-  const res = await fetch(`${API}/auth/refresh`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ refreshToken }),   // <-- REQUIRED by your backend
-  });
-
-  if (!res.ok) return null;
-
-  const data = await res.json();
-  // standardize and save
-  const access = data.accessToken || data.token;
-  if (access) localStorage.setItem("accessToken", access);
-  if (data.refreshToken) localStorage.setItem("refreshToken", data.refreshToken);
-  return access;
-}
-
-
-async function refreshIfNeeded() {
+// Exported so other modules can call it directly if needed
+export async function refreshIfNeeded() {
   const rt = getRefreshToken();
   if (!rt) return null;
+
   const res = await fetch(`${API}/auth/refresh`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ refreshToken: rt }),
+    body: JSON.stringify({ refreshToken: rt }), // backend expects { refreshToken }
   });
+
   if (!res.ok) return null;
+
   const j = await res.json();
+  // persist using consistent keys the rest of the app reads
   saveTokens({ accessToken: j.accessToken || j.token, refreshToken: j.refreshToken });
   return getAccessToken();
 }
