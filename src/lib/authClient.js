@@ -36,19 +36,27 @@ function isExpired(jwt) {
   } catch { return false; }
 }
 
-async function refreshIfNeeded() {
-  const rt = getRefreshToken();
-  if (!rt) return null;
+// authClient.ts
+export async function refreshTokens() {
+  const refreshToken = localStorage.getItem("refreshToken"); // or wherever you store it
+  if (!refreshToken) return null;
+
   const res = await fetch(`${API}/auth/refresh`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ refreshToken: rt }),
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ refreshToken }),   // <-- REQUIRED by your backend
   });
+
   if (!res.ok) return null;
-  const j = await res.json();
-  saveTokens({ accessToken: j.accessToken || j.token, refreshToken: j.refreshToken });
-  return getAccessToken();
+
+  const data = await res.json();
+  // standardize and save
+  const access = data.accessToken || data.token;
+  if (access) localStorage.setItem("accessToken", access);
+  if (data.refreshToken) localStorage.setItem("refreshToken", data.refreshToken);
+  return access;
 }
+
 
 /**
  * Use this instead of fetch() for any authenticated request.
