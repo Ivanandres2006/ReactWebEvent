@@ -16,9 +16,8 @@ export function getRefreshToken() {
 
 export function saveTokens({ accessToken, token, refreshToken }) {
   const t = normalizeToken(token || accessToken || '');
-  if (t) localStorage.setItem('token', t);
+  if (t) localStorage.setItem('token', t);                 // <-- access stored under 'token'
   if (refreshToken) localStorage.setItem('refreshToken', refreshToken);
-  // let listeners (RegisterPopup, etc.) re-read tokens
   window.dispatchEvent(new Event('auth:login'));
 }
 
@@ -38,7 +37,9 @@ function isExpired(jwt) {
   }
 }
 
-// Exported so other modules can call it directly if needed
+// --- REFRESH ---
+
+// Exported so other modules (or your snippet) can call it.
 export async function refreshIfNeeded() {
   const rt = getRefreshToken();
   if (!rt) return null;
@@ -46,16 +47,22 @@ export async function refreshIfNeeded() {
   const res = await fetch(`${API}/auth/refresh`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ refreshToken: rt }), // backend expects { refreshToken }
+    body: JSON.stringify({ refreshToken: rt }),  // backend expects { refreshToken }
   });
 
   if (!res.ok) return null;
 
   const j = await res.json();
-  // persist using consistent keys the rest of the app reads
   saveTokens({ accessToken: j.accessToken || j.token, refreshToken: j.refreshToken });
   return getAccessToken();
 }
+
+// Alias to match your requested name/signature
+export async function refreshTokens() {
+  return refreshIfNeeded();
+}
+
+// --- AUTH'ED FETCH ---
 
 /**
  * Use this instead of fetch() for any authenticated request.
@@ -73,7 +80,7 @@ export async function fetchWithAuth(url, options = {}) {
   };
 
   let res = await tryOnce(token);
-  if (res.status === 401) {
+  if (res.status === 401 && !String(url).endsWith('/auth/refresh')) {
     token = await refreshIfNeeded();
     if (token) res = await tryOnce(token);
   }
