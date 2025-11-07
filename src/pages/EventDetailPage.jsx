@@ -18,7 +18,7 @@ import markerIcon2x from 'leaflet/dist/images/marker-icon-2x.png'
 import markerIcon from 'leaflet/dist/images/marker-icon.png'
 import markerShadow from 'leaflet/dist/images/marker-shadow.png'
 
-import { fetchWithAuth, getAccessToken } from '../lib/authClient'
+import { API, fetchWithAuth, getAccessToken } from '../lib/authClient'
 
 delete L.Icon.Default.prototype._getIconUrl
 L.Icon.Default.mergeOptions({
@@ -28,7 +28,6 @@ L.Icon.Default.mergeOptions({
 })
 
 const stripePromise = loadStripe('pk_test_51RcVeBBU1Fa59mBKHvngFVDwq8gBiZ863TKO6okEHBj28VjLiYAUQ5OhDs0k1WEyfqXRmtziurmLYBqlQfyOOl6C007EKiWppc')
-const API = 'https://backendevent-etce.onrender.com'
 
 const isApplePlatform = () => {
   const ua = navigator.userAgent || ''

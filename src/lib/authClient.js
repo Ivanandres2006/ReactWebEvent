@@ -32,12 +32,10 @@ function isExpired(jwt) {
     if (!b) return false;
     const payload = JSON.parse(atob(b.replace(/-/g, '+').replace(/_/g, '/')));
     return payload?.exp ? Date.now() >= payload.exp * 1000 : false;
-  } catch {
-    return false;
-  }
+  } catch { return false; }
 }
 
-// ---- REFRESH ----
+// Refresh using the body AND an Authorization header (covers strict servers)
 export async function refreshIfNeeded() {
   const rt = getRefreshToken();
   if (!rt) return null;
@@ -49,15 +47,16 @@ export async function refreshIfNeeded() {
   });
 
   if (!res.ok) return null;
+
   const j = await res.json();
   saveTokens({ accessToken: j.accessToken || j.token, refreshToken: j.refreshToken });
   return getAccessToken();
 }
 
-// Alias for your snippet name
+// optional alias
 export async function refreshTokens() { return refreshIfNeeded(); }
 
-// ---- AUTHED FETCH ----
+// Always use this for protected calls
 export async function fetchWithAuth(url, options = {}) {
   let token = getAccessToken();
   if (!token || isExpired(token)) token = await refreshIfNeeded();
