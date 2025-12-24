@@ -76,14 +76,9 @@ body {
 .event-error,
 .event-loading {
   position: absolute;
-  min-height: 100dvh;
-  width: 100%;
   background:
     radial-gradient(1200px 600px at 20% -10%, rgba(0, 230, 118, 0.05), transparent 60%),
-    linear-gradient(to bottom, #0A0A23 0%, #000 100%);
-  overflow: visible;
-  position: relative;
-  padding-top: 24px;
+    linear-gradient(to bottom, #0A0A23 0%, #000 100%);  left: 50%;
   top: 50%;
   transform: translate(-50%, -50%);
   font-size: 40px;

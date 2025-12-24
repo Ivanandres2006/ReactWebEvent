@@ -1,153 +1,185 @@
-// pages/SuccessPage.jsx
-import { useEffect, useState } from 'react';
-import { useNavigate, useSearchParams, Link } from 'react-router-dom';
-import WebTicketCard from '../components/WebTicketCard';
-import './SuccessPage.css';
+import { useEffect, useState, useRef } from 'react'
+import { useNavigate, useSearchParams, Link } from 'react-router-dom'
+import WebTicketCard from '../components/WebTicketCard'
+import './SuccessPage.css'
 
-const API = 'https://backendevent-etce.onrender.com';
+const API = 'https://backendevent-etce.onrender.com'
 
 // Legacy fallback: newest “batch” if we truly have no identifiers.
 function pickNewestBatch(eventTickets) {
-  if (!Array.isArray(eventTickets) || eventTickets.length === 0) return [];
-  const groups = new Map();
-  const key = (t) => t.paymentIntentId ? `pi:${t.paymentIntentId}`
-    : t.orderId ? `order:${t.orderId}`
-    : t.createdAt ? `min:${new Date(t.createdAt).toISOString().slice(0,16)}`
-    : `id:${t.id}`;
+  if (!Array.isArray(eventTickets) || eventTickets.length === 0) return []
+  const groups = new Map()
+  const key = (t) =>
+    t.paymentIntentId
+      ? `pi:${t.paymentIntentId}`
+      : t.orderId
+      ? `order:${t.orderId}`
+      : t.createdAt
+      ? `min:${new Date(t.createdAt).toISOString().slice(0, 16)}`
+      : `id:${t.id}`
+
   for (const t of eventTickets) {
-    const k = key(t);
-    if (!groups.has(k)) groups.set(k, []);
-    groups.get(k).push(t);
+    const k = key(t)
+    if (!groups.has(k)) groups.set(k, [])
+    groups.get(k).push(t)
   }
+
   const score = (arr) => ({
-    createdMax: arr.reduce((m,t)=>Math.max(m, t.createdAt ? new Date(t.createdAt).getTime()||0 : 0),0),
-    idMax:      arr.reduce((m,t)=>Math.max(m, Number(t.id)||0),0)
-  });
-  let best=null;
-  for (const [,arr] of groups) {
-    const s=score(arr);
-    if (!best || s.createdMax>best.createdMax || (s.createdMax===best.createdMax && s.idMax>best.idMax)) {
-      best={arr,...s};
+    createdMax: arr.reduce((m, t) => Math.max(m, t.createdAt ? new Date(t.createdAt).getTime() || 0 : 0), 0),
+    idMax: arr.reduce((m, t) => Math.max(m, Number(t.id) || 0), 0),
+  })
+
+  let best = null
+  for (const [, arr] of groups) {
+    const s = score(arr)
+    if (!best || s.createdMax > best.createdMax || (s.createdMax === best.createdMax && s.idMax > best.idMax)) {
+      best = { arr, ...s }
     }
   }
-  return best?.arr ?? [];
+  return best?.arr ?? []
 }
 
 export default function SuccessPage() {
-  const [params, setParams] = useSearchParams();
-  const eventId = Number(params.get('eventId'));
-  const pi = params.get('pi') || '';                          // from card checkout
-  const pendingParam = (params.get('pending') || '').toLowerCase(); // 'pagomovil' | 'zelle' | 'cash' | ''
-  const sinceParam = params.get('since');
-  const navigate = useNavigate();
+  const [params, setParams] = useSearchParams()
+  const eventId = Number(params.get('eventId'))
+  const pi = params.get('pi') || ''
+  const pendingParam = (params.get('pending') || '').toLowerCase()
+  const sinceParam = params.get('since')
 
-  const token = localStorage.getItem('token') || '';
-  const email = localStorage.getItem('email') || '';
+  const navigate = useNavigate()
+
+  const token = localStorage.getItem('token') || ''
+  const email = localStorage.getItem('email') || ''
 
   // If pending was passed but since is missing, set it to now so we never show old tickets.
   useEffect(() => {
     if (pendingParam && !sinceParam) {
-      const next = new URLSearchParams(params);
-      next.set('since', String(Date.now()));
-      setParams(next, { replace: true });
+      const next = new URLSearchParams(params)
+      next.set('since', String(Date.now()))
+      setParams(next, { replace: true })
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); 
+  }, [])
 
-  const since = sinceParam ? parseInt(sinceParam, 10) : null;
+  const since = sinceParam ? parseInt(sinceParam, 10) : null
 
-  const [visible, setVisible] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [showPendingBanner, setShowPendingBanner] = useState(Boolean(pendingParam));
+  const [visible, setVisible] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
+  const [showPendingBanner, setShowPendingBanner] = useState(Boolean(pendingParam))
 
   const pendingPretty =
-    pendingParam === 'pagomovil' ? 'Pago Móvil'
-    : pendingParam === 'zelle' ? 'Zelle'
-    : pendingParam === 'cash' ? 'Cash'
-    : '';
+    pendingParam === 'pagomovil'
+      ? 'Pago Móvil'
+      : pendingParam === 'zelle'
+      ? 'Zelle'
+      : pendingParam === 'cash'
+      ? 'Cash'
+      : ''
 
   const fetchForEvent = async () => {
-    if (!email) throw new Error('Missing email');
-    // Public endpoint (also works with token if present)
+    if (!email) throw new Error('Missing email')
     const res = await fetch(`${API}/api/tickets/my?email=${encodeURIComponent(email)}`, {
       headers: token ? { Authorization: `Bearer ${token}` } : {},
-    });
-    if (!res.ok) throw new Error(`Tickets ${res.status}`);
-    const all = await res.json();
-    return (all || []).filter(t => Number(t.eventId) === Number(eventId));
-  };
+    })
+    if (!res.ok) throw new Error(`Tickets ${res.status}`)
+    const all = await res.json()
+    return (all || []).filter((t) => Number(t.eventId) === Number(eventId))
+  }
 
   const filterForThisCheckout = (list) => {
     if (pi) {
-      // Card: exact match by PI
-      return list.filter(t => (t.paymentIntentId || '') === pi);
+      return list.filter((t) => (t.paymentIntentId || '') === pi)
     }
     if (pendingParam) {
-      // Manual: only tickets created after “since”
-      if (!since) return []; // until we set since (first render)
-      const cutoff = since - 10_000; // small tolerance
-      return list.filter(t => {
-        const ts = t.createdAt ? new Date(t.createdAt).getTime() : NaN;
-        return Number.isFinite(ts) && ts >= cutoff;
-      });
+      if (!since) return []
+      const cutoff = since - 10_000
+      return list.filter((t) => {
+        const ts = t.createdAt ? new Date(t.createdAt).getTime() : NaN
+        return Number.isFinite(ts) && ts >= cutoff
+      })
     }
-    // Legacy: newest batch
-    return pickNewestBatch(list);
-  };
+    return pickNewestBatch(list)
+  }
 
   // First load
   useEffect(() => {
-    (async () => {
+    ;(async () => {
       try {
-        const list = await fetchForEvent();
-        setVisible(filterForThisCheckout(list));
+        const list = await fetchForEvent()
+        setVisible(filterForThisCheckout(list))
       } catch {
-        setError('Couldn’t load your ticket. Check your email for the receipt + QR.');
+        setError('Couldn’t load your ticket. Check your email for the receipt + QR.')
       } finally {
-        setLoading(false);
+        setLoading(false)
       }
-    })();
+    })()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [eventId, pi, since, token, email]);
+  }, [eventId, pi, since, token, email])
 
-  // Poll ONLY when we expect new tickets but have none yet
+  // ✅ Exponential backoff polling (max attempts, stop early)
+  const attemptsRef = useRef(0)
+  const timeoutRef = useRef(null)
+
   useEffect(() => {
     const needPoll =
       (pi && visible.length === 0) ||
-      (pendingParam && since && visible.length === 0);
+      (pendingParam && since && visible.length === 0)
 
-    if (!needPoll) return;
+    if (!needPoll) return
 
-    let stop = false;
+    let stopped = false
+    attemptsRef.current = 0
+
     const tick = async () => {
-      try {
-        const list = await fetchForEvent();
-        const filtered = filterForThisCheckout(list);
-        if (!stop && filtered.length > 0) {
-          setVisible(filtered);
-          if (showPendingBanner) {
-            setShowPendingBanner(false);
-            const next = new URLSearchParams(params);
-            next.delete('pending'); next.delete('since'); next.delete('pi');
-            setParams(next, { replace: true });
-          }
-        }
-      } catch {}
-    };
+      if (stopped) return
+      attemptsRef.current += 1
 
-    const id = setInterval(tick, 5000);
-    tick();
-    return () => { stop = true; clearInterval(id); };
+      try {
+        const list = await fetchForEvent()
+        const filtered = filterForThisCheckout(list)
+
+        if (!stopped && filtered.length > 0) {
+          setVisible(filtered)
+
+          if (showPendingBanner) {
+            setShowPendingBanner(false)
+            const next = new URLSearchParams(params)
+            next.delete('pending')
+            next.delete('since')
+            next.delete('pi')
+            setParams(next, { replace: true })
+          }
+          return // ✅ stop polling once we have tickets
+        }
+      } catch {
+        // ignore; keep trying within max attempts
+      }
+
+      if (attemptsRef.current >= 8) {
+        // ✅ stop after max attempts
+        return
+      }
+
+      const delay = Math.round(2000 * Math.pow(1.7, attemptsRef.current)) // exponential backoff
+      timeoutRef.current = setTimeout(tick, delay)
+    }
+
+    tick()
+
+    return () => {
+      stopped = true
+      if (timeoutRef.current) clearTimeout(timeoutRef.current)
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pi, pendingParam, since, visible.length, showPendingBanner]);
+  }, [pi, pendingParam, since, visible.length, showPendingBanner])
 
   // If nothing to show and not pending, return after 10s
   useEffect(() => {
-    if (showPendingBanner || loading || error || visible.length > 0) return;
-    const t = setTimeout(() => navigate(`/events/${eventId}`), 10000);
-    return () => clearTimeout(t);
-  }, [showPendingBanner, loading, error, visible.length, eventId, navigate]);
+    if (showPendingBanner || loading || error || visible.length > 0) return
+    const t = setTimeout(() => navigate(`/events/${eventId}`), 10000)
+    return () => clearTimeout(t)
+  }, [showPendingBanner, loading, error, visible.length, eventId, navigate])
 
   return (
     <div className="success-page">
@@ -158,7 +190,9 @@ export default function SuccessPage() {
             <div className="status-strong">
               {showPendingBanner
                 ? 'Payment request sent'
-                : (visible.length > 0 ? 'Payment successful' : 'Finalizing payment…')}
+                : visible.length > 0
+                ? 'Payment successful'
+                : 'Finalizing payment…'}
             </div>
             <div className="status-sub">
               {showPendingBanner ? (
@@ -166,10 +200,12 @@ export default function SuccessPage() {
                   We <strong>notified the organizer</strong> about your {pendingPretty || 'payment'}.
                   You’ll receive an email with your ticket as soon as they confirm it.
                 </>
+              ) : visible.length > 0 ? (
+                <>
+                  Confirmation sent to <span className="status-email">{email || 'your email'}</span>
+                </>
               ) : (
-                visible.length > 0
-                  ? <>Confirmation sent to <span className="status-email">{email || 'your email'}</span></>
-                  : <>We’re checking for your ticket…</>
+                <>We’re checking for your ticket…</>
               )}
             </div>
           </div>
@@ -199,11 +235,11 @@ export default function SuccessPage() {
             </p>
           )}
 
-          {visible.map(t => (
+          {visible.map((t) => (
             <WebTicketCard key={t.id} ticket={t} apiBase={API} token={token} />
           ))}
         </div>
       </div>
     </div>
-  );
+  )
 }

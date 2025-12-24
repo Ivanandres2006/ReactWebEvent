@@ -15,11 +15,26 @@ function compactPayload(obj) {
   return out
 }
 
+function InlineError({ message, onDismiss }) {
+  if (!message) return null
+  return (
+    <div className="auth-error">
+      <div className="auth-error-row">
+        <span>{message}</span>
+        <button className="auth-error-btn" onClick={onDismiss} type="button">
+          Dismiss
+        </button>
+      </div>
+    </div>
+  )
+}
+
 export default function AuthModal({ isOpen, onClose }) {
   const [isLogin, setIsLogin] = useState(true)
   const [step, setStep] = useState('auth')
   const [loading, setLoading] = useState(false)
   const [verificationCode, setVerificationCode] = useState('')
+  const [errMsg, setErrMsg] = useState(null)
 
   const [form, setForm] = useState({
     firstName: '',
@@ -27,7 +42,6 @@ export default function AuthModal({ isOpen, onClose }) {
     username: '',
     emailOrUsername: '',
     password: '',
-    // NOTE: we are NOT asking for phone here; do not send it
   })
 
   useEffect(() => {
@@ -36,12 +50,19 @@ export default function AuthModal({ isOpen, onClose }) {
     return () => document.body.classList.remove('body-no-scroll')
   }, [isOpen])
 
+  useEffect(() => {
+    if (!isOpen) return
+    setErrMsg(null)
+    setLoading(false)
+  }, [isOpen])
+
   if (!isOpen) return null
 
   async function handleAuthSubmit(e) {
     e.preventDefault()
     if (loading) return
     setLoading(true)
+    setErrMsg(null)
 
     try {
       const url = isLogin ? `${API}/auth/login` : `${API}/auth/register`
@@ -57,27 +78,38 @@ export default function AuthModal({ isOpen, onClose }) {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
         })
-        const data = await res.json()
+
+        let data = null
+        try {
+          data = await res.json()
+        } catch {
+          data = null
+        }
 
         if (!res.ok) {
-          alert(data.message || 'Login failed')
+          setErrMsg(data?.message || 'Login failed. Please try again.')
           setLoading(false)
           return
         }
 
-        const access = data.accessToken || data.token || data.jwt || ''
+        const access = data?.accessToken || data?.token || data?.jwt || ''
         if (!access) {
-          alert('Login succeeded but no access token was returned.')
+          setErrMsg('Login succeeded but no access token was returned.')
           setLoading(false)
           return
         }
-        saveTokens({ accessToken: access, refreshToken: data.refreshToken })
+
+        saveTokens({ accessToken: access, refreshToken: data?.refreshToken })
+
+        // let other parts of app react to login
+        window.dispatchEvent(new Event('auth:login'))
+
         setLoading(false)
         onClose()
         return
       }
 
-      // Register (omit phone entirely unless you actually collect it)
+      // Register
       const raw = {
         firstName: form.firstName,
         lastName: form.lastName,
@@ -85,7 +117,6 @@ export default function AuthModal({ isOpen, onClose }) {
         email: form.emailOrUsername,
         password: form.password,
         useSms: false,
-        // phone: undefined  // DO NOT send empty phone
       }
       const payload = compactPayload(raw)
 
@@ -94,27 +125,25 @@ export default function AuthModal({ isOpen, onClose }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       })
-      const data = await res.json()
+
+      let data = null
+      try {
+        data = await res.json()
+      } catch {
+        data = null
+      }
 
       if (!res.ok) {
-        // Many backends send “phone already in use” when they get empty string. We are not sending it anymore,
-        // but just in case the API still responds that way:
-        const msg = String(data.message || '').toLowerCase()
-        if (msg.includes('phone') && msg.includes('already')) {
-          alert('That account’s phone is already in use. Since we’re not collecting phone here, please try again or log in if you’ve already registered.')
-        } else {
-          alert(data.message || 'Registration failed')
-        }
+        setErrMsg(data?.message || 'Registration failed. Please try again.')
         setLoading(false)
         return
       }
 
-      // If your backend requires email verification step:
       setLoading(false)
       setStep('verify')
     } catch (err) {
       setLoading(false)
-      alert('Network error. Try again.')
+      setErrMsg('Network error. Please try again.')
     }
   }
 
@@ -122,6 +151,8 @@ export default function AuthModal({ isOpen, onClose }) {
     e.preventDefault()
     if (loading) return
     setLoading(true)
+    setErrMsg(null)
+
     try {
       const res = await fetch(`${API}/auth/verify`, {
         method: 'POST',
@@ -131,19 +162,35 @@ export default function AuthModal({ isOpen, onClose }) {
           code: verificationCode.trim(),
         }),
       })
-      const data = await res.json()
+
+      let data = null
+      try {
+        data = await res.json()
+      } catch {
+        data = null
+      }
+
       if (!res.ok) {
-        alert(data.message || 'Invalid verification code')
+        setErrMsg(data?.message || 'Invalid verification code.')
         setLoading(false)
         return
       }
-      const access = data.accessToken || data.token || data.jwt || ''
-      saveTokens({ accessToken: access, refreshToken: data.refreshToken })
+
+      const access = data?.accessToken || data?.token || data?.jwt || ''
+      if (!access) {
+        setErrMsg('Verification succeeded but no access token was returned.')
+        setLoading(false)
+        return
+      }
+
+      saveTokens({ accessToken: access, refreshToken: data?.refreshToken })
+      window.dispatchEvent(new Event('auth:login'))
+
       setLoading(false)
       onClose()
     } catch {
       setLoading(false)
-      alert('Verification failed. Try again.')
+      setErrMsg('Verification failed. Please try again.')
     }
   }
 
@@ -156,6 +203,8 @@ export default function AuthModal({ isOpen, onClose }) {
         aria-modal="true"
         aria-label={step === 'auth' ? (isLogin ? 'Login' : 'Sign Up') : 'Verify Email'}
       >
+        <InlineError message={errMsg} onDismiss={() => setErrMsg(null)} />
+
         {step === 'auth' && (
           <>
             <h2>{isLogin ? 'Welcome Back' : 'Create Account'}</h2>
@@ -166,21 +215,21 @@ export default function AuthModal({ isOpen, onClose }) {
                     type="text"
                     placeholder="First Name"
                     value={form.firstName}
-                    onChange={e => setForm({ ...form, firstName: e.target.value })}
+                    onChange={(e) => setForm({ ...form, firstName: e.target.value })}
                     required
                   />
                   <input
                     type="text"
                     placeholder="Last Name"
                     value={form.lastName}
-                    onChange={e => setForm({ ...form, lastName: e.target.value })}
+                    onChange={(e) => setForm({ ...form, lastName: e.target.value })}
                     required
                   />
                   <input
                     type="text"
                     placeholder="Username"
                     value={form.username}
-                    onChange={e => setForm({ ...form, username: e.target.value })}
+                    onChange={(e) => setForm({ ...form, username: e.target.value })}
                     required
                   />
                 </>
@@ -190,14 +239,14 @@ export default function AuthModal({ isOpen, onClose }) {
                 type="text"
                 placeholder="Email"
                 value={form.emailOrUsername}
-                onChange={e => setForm({ ...form, emailOrUsername: e.target.value })}
+                onChange={(e) => setForm({ ...form, emailOrUsername: e.target.value })}
                 required
               />
               <input
                 type="password"
                 placeholder="Password"
                 value={form.password}
-                onChange={e => setForm({ ...form, password: e.target.value })}
+                onChange={(e) => setForm({ ...form, password: e.target.value })}
                 required
               />
 
@@ -208,7 +257,13 @@ export default function AuthModal({ isOpen, onClose }) {
 
             <p className="toggle-text">
               {isLogin ? "Don't have an account?" : 'Already have an account?'}{' '}
-              <span onClick={() => { setIsLogin(!isLogin); setStep('auth'); }}>
+              <span
+                onClick={() => {
+                  setIsLogin(!isLogin)
+                  setStep('auth')
+                  setErrMsg(null)
+                }}
+              >
                 {isLogin ? 'Sign Up' : 'Login'}
               </span>
             </p>
@@ -218,14 +273,16 @@ export default function AuthModal({ isOpen, onClose }) {
         {step === 'verify' && (
           <>
             <h2>Verify Your Email</h2>
-            <p className="subtext">We’ve sent a 6-digit code to <strong>{form.emailOrUsername}</strong></p>
+            <p className="subtext">
+              We’ve sent a 6-digit code to <strong>{form.emailOrUsername}</strong>
+            </p>
             <form onSubmit={handleVerifySubmit}>
               <input
                 type="text"
                 maxLength="6"
                 placeholder="Enter verification code"
                 value={verificationCode}
-                onChange={e => setVerificationCode(e.target.value)}
+                onChange={(e) => setVerificationCode(e.target.value)}
                 required
               />
               <button type="submit" disabled={loading}>
