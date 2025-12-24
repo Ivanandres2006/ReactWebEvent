@@ -76,7 +76,7 @@ body {
 .event-error,
 .event-loading {
   position: absolute;
-  background-color: #000;
+  background: #000;
   left: 50%;
   top: 50%;
   transform: translate(-50%, -50%);

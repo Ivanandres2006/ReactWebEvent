@@ -377,7 +377,7 @@ export default function EventDetailPage() {
 
   const canRegister = !requiresWaitlist || waitlistStatus === 'approved'
   const registerLabel = requiresWaitlist
-    ? (waitlistStatus === 'approved' ? 'Register'
+    ? (waitlistStatus === 'approved' ? 'Buy'
       : waitlistStatus === 'pending' ? 'Request Pending'
       : waitlistStatus === 'denied' ? 'Access Denied'
       : 'Request Access')
@@ -416,14 +416,6 @@ export default function EventDetailPage() {
 
   return (
     <div className="event-fullscreen">
-      <a
-        href="https://apps.apple.com/app/idYOUR_APP_ID"
-        target="_blank"
-        rel="noopener noreferrer"
-        className="event-app-download"
-      >
-        <img src={appstoreIcon} alt="Download on App Store" />
-      </a>
 
       <div className="event-top-section">
         <img
