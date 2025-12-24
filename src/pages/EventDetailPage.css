@@ -75,14 +75,22 @@ body {
 /* --- Loading/Error --- */
 .event-error,
 .event-loading {
-  position: absolute;
+  position: fixed;           /* ⬅️ important */
+  inset: 0;                  /* top:0 right:0 bottom:0 left:0 */
+  
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
   background:
     radial-gradient(1200px 600px at 20% -10%, rgba(0, 230, 118, 0.05), transparent 60%),
-    linear-gradient(to bottom, #0A0A23 0%, #000 100%);  left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%);
+    linear-gradient(to bottom, #0A0A23 0%, #000 100%);
+
+  color: white;
   font-size: 40px;
+  z-index: 9999;
 }
+
 
 /* --- Content --- */
 .event-content {
