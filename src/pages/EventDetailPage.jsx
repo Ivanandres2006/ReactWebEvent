@@ -494,14 +494,52 @@ export default function EventDetailPage() {
   }
 
   // ✅ Robust early UI: loading + error + retry
-  if (eventLoading) return <div className="event-loading">Loading event...</div>
-
-  if (eventErrMsg)
+  if (eventLoading) {
     return (
-      <div className="event-content" style={{ maxWidth: 720, margin: '0 auto', padding: 24 }}>
-        <Notice type="error" message={eventErrMsg} onRetry={loadEvent} />
+      <div className="event-loading">
+        <div className="loader-card">
+          <div className="loader-top">
+            <div className="loader-spinner" aria-hidden="true" />
+            <div>
+              <div className="loader-title">Loading event</div>
+              <div className="loader-sub">Fetching details, tiers, and location…</div>
+            </div>
+          </div>
+  
+          <div className="loader-bar">
+            <span />
+          </div>
+  
+          <div className="loader-dots" aria-label="Loading">
+            <span />
+            <span />
+            <span />
+          </div>
+        </div>
       </div>
     )
+  }
+  
+  if (eventErrMsg) {
+    return (
+      <div className="event-error">
+        <div className="loader-card">
+          <div className="loader-title">Couldn’t load this event</div>
+          <div className="loader-sub">{eventErrMsg}</div>
+  
+          <div className="loader-actions">
+            <button className="btn-primary" onClick={loadEvent} type="button">
+              Retry
+            </button>
+            <button className="btn-secondary" onClick={() => window.location.reload()} type="button">
+              Reload
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+  
 
   if (!event) return <div className="event-loading">Loading event...</div>
 
