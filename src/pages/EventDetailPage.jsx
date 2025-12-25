@@ -112,9 +112,13 @@ export default function EventDetailPage() {
   const [waitlistModal, setWaitlistModal] = useState(false)
   const [waitlistBusy, setWaitlistBusy] = useState(false)
 
+  // ✅ Share UX
+  const [shareMsg, setShareMsg] = useState(null)
+  const [shareBusy, setShareBusy] = useState(false)
+
   const token = getAccessToken()
   const isLoggedIn = !!token
-  const requiresWaitlist = !!(event?.listOnly)
+  const requiresWaitlist = !!event?.listOnly
   const showAppleWallet = useMemo(() => canShowAppleWallet() && isLoggedIn, [isLoggedIn])
 
   // Mark iOS Safari on <html> so CSS can disable blur/backdrop
@@ -183,6 +187,60 @@ export default function EventDetailPage() {
     loadEvent()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id])
+
+  // ✅ Share helpers (works on iOS + desktop)
+  const getShareUrl = () => {
+    const origin = window.location.origin
+    const path = `/#/event/${id}`
+    const qs = refCode ? `?ref=${encodeURIComponent(refCode)}` : ''
+    return `${origin}${path}${qs}`
+  }
+
+  const handleShare = async () => {
+    const url = getShareUrl()
+    const title = event?.title ? `WKND — ${event.title}` : 'WKND Event'
+    const text = event?.title ? `Check out: ${event.title}` : 'Check out this WKND event'
+
+    setShareMsg(null)
+    setShareBusy(true)
+
+    try {
+      // Native share sheet (mobile)
+      if (navigator.share) {
+        await navigator.share({ title, text, url })
+        setShareMsg('Shared!')
+        return
+      }
+
+      // Clipboard (desktop)
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(url)
+        setShareMsg('Link copied!')
+        return
+      }
+
+      // Fallback copy (older iOS / browsers)
+      const ta = document.createElement('textarea')
+      ta.value = url
+      ta.setAttribute('readonly', '')
+      ta.style.position = 'fixed'
+      ta.style.left = '-9999px'
+      document.body.appendChild(ta)
+      ta.select()
+      ta.setSelectionRange(0, url.length)
+
+      const ok = document.execCommand('copy')
+      ta.remove()
+      setShareMsg(ok ? 'Link copied!' : 'Copy failed — please copy from the address bar.')
+    } catch (e) {
+      // User canceled the share sheet
+      if (String(e?.name || '').toLowerCase() === 'aborterror') return
+      setShareMsg('Could not share. Try copying the link.')
+    } finally {
+      setShareBusy(false)
+      setTimeout(() => setShareMsg(null), 1600)
+    }
+  }
 
   // Load waitlist status (if listOnly + logged in)
   useEffect(() => {
@@ -444,9 +502,7 @@ export default function EventDetailPage() {
         setShowPopup(false)
         const methodLower = String(method || 'card').toLowerCase()
         const since = Date.now()
-        window.location.href = `/#/success?eventId=${id}&pending=${encodeURIComponent(
-          methodLower
-        )}&since=${since}`
+        window.location.href = `/#/success?eventId=${id}&pending=${encodeURIComponent(methodLower)}&since=${since}`
         return
       }
 
@@ -505,11 +561,11 @@ export default function EventDetailPage() {
               <div className="loader-sub">Fetching details, tiers, and location…</div>
             </div>
           </div>
-  
+
           <div className="loader-bar">
             <span />
           </div>
-  
+
           <div className="loader-dots" aria-label="Loading">
             <span />
             <span />
@@ -519,14 +575,14 @@ export default function EventDetailPage() {
       </div>
     )
   }
-  
+
   if (eventErrMsg) {
     return (
       <div className="event-error">
         <div className="loader-card">
           <div className="loader-title">Couldn’t load this event</div>
           <div className="loader-sub">{eventErrMsg}</div>
-  
+
           <div className="loader-actions">
             <button className="btn-primary" onClick={loadEvent} type="button">
               Retry
@@ -539,11 +595,9 @@ export default function EventDetailPage() {
       </div>
     )
   }
-  
 
   if (!event) return <div className="event-loading">Loading event...</div>
 
-  const canRegister = !requiresWaitlist || waitlistStatus === 'approved'
   const registerLabel = requiresWaitlist
     ? waitlistStatus === 'approved'
       ? 'Buy'
@@ -622,11 +676,10 @@ export default function EventDetailPage() {
         <p className="event-location">📍 {event?.location || ''}</p>
 
         {/* ✅ Checkout errors show here (no blank / no only-alert) */}
-        <Notice
-          type="error"
-          message={checkoutErrMsg}
-          onDismiss={() => setCheckoutErrMsg(null)}
-        />
+        <Notice type="error" message={checkoutErrMsg} onDismiss={() => setCheckoutErrMsg(null)} />
+
+        {/* ✅ Share feedback */}
+        <Notice type="info" message={shareMsg} onDismiss={() => setShareMsg(null)} />
 
         {requiresWaitlist && (
           <div className="waitlist-banner">
@@ -641,14 +694,8 @@ export default function EventDetailPage() {
           <button className="btn-primary" onClick={onRegisterClick}>
             {registerLabel}
           </button>
-          <button
-            className="btn-secondary"
-            onClick={() => {
-              const url = window.location.href
-              if (navigator.clipboard?.writeText) navigator.clipboard.writeText(url)
-            }}
-          >
-            Share
+          <button className="btn-secondary" onClick={handleShare} disabled={shareBusy}>
+            {shareBusy ? 'Sharing…' : 'Share'}
           </button>
         </div>
 
