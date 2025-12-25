@@ -38,9 +38,106 @@ const isApplePlatform = () => {
 const canShowAppleWallet = () => isApplePlatform()
 const PASS_URL_FOR_EVENT = (eventId) => `${API}/api/passes/event/${encodeURIComponent(eventId)}`
 
-function formatDate(isoString) {
+// ---- i18n (local, no library)
+const LANG_KEY = 'wknd_lang'
+const getInitialLang = () => {
+  const saved = localStorage.getItem(LANG_KEY)
+  if (saved === 'en' || saved === 'es') return saved
+  const nav = (navigator.language || '').toLowerCase()
+  return nav.startsWith('es') ? 'es' : 'en'
+}
+
+const DICT = {
+  en: {
+    loadingEvent: 'Loading event',
+    loadingSub: 'Fetching details, tiers, and location…',
+    couldntLoadTitle: "Couldn’t load this event",
+    couldntLoadBody: 'We couldn’t load this event. Please try again.',
+    retry: 'Retry',
+    reload: 'Reload',
+    shared: 'Shared!',
+    linkCopied: 'Link copied!',
+    copyFailed: 'Copy failed — please copy from the address bar.',
+    shareFailed: 'Could not share. Try copying the link.',
+    register: 'Register',
+    buy: 'Buy',
+    share: 'Share',
+    sharing: 'Sharing…',
+    about: 'About',
+    location: 'Location',
+    mapNA: 'Map not available.',
+    listOnly: 'List-only event',
+    approved: 'Approved',
+    pending: 'Pending approval',
+    denied: 'Access denied',
+    requestAccess: 'Request Access',
+    requestPending: 'Request Pending',
+    accessDenied: 'Access Denied',
+    listOnlyAccess: 'List-Only Access',
+    approvedMsg: "✅ You’re approved. You can register now.",
+    pendingMsg: "⏳ Your request is pending. We’ll notify you when the organizer approves.",
+    deniedMsg: '❌ The organizer denied access for this event.',
+    needsApprovalMsg: 'This event requires approval. Request access to continue.',
+    sending: 'Sending…',
+    close: 'Close',
+    dismiss: 'Dismiss',
+    selectTierErr: 'Please select a ticket tier.',
+    needEmailErr: 'We couldn’t read your email. Please log in again.',
+    checkoutFailed: 'Checkout failed. Please try again.',
+    unexpected: 'Unexpected server response. Please try again.',
+    checkoutError: 'Checkout error. Please try again.',
+    walletFail: 'Unable to generate Apple Wallet pass yet.',
+    walletProblem: 'Problem downloading Apple Wallet pass.',
+  },
+  es: {
+    loadingEvent: 'Cargando evento',
+    loadingSub: 'Obteniendo detalles, tickets y ubicación…',
+    couldntLoadTitle: 'No se pudo cargar este evento',
+    couldntLoadBody: 'No pudimos cargar este evento. Intenta de nuevo.',
+    retry: 'Reintentar',
+    reload: 'Recargar',
+    shared: '¡Compartido!',
+    linkCopied: '¡Link copiado!',
+    copyFailed: 'No se pudo copiar — copia desde la barra de dirección.',
+    shareFailed: 'No se pudo compartir. Intenta copiar el link.',
+    register: 'Registrarse',
+    buy: 'Comprar',
+    share: 'Compartir',
+    sharing: 'Compartiendo…',
+    about: 'Descripción',
+    location: 'Ubicación',
+    mapNA: 'Mapa no disponible.',
+    listOnly: 'Evento con lista',
+    approved: 'Aprobado',
+    pending: 'Pendiente',
+    denied: 'Acceso denegado',
+    requestAccess: 'Pedir acceso',
+    requestPending: 'Solicitud pendiente',
+    accessDenied: 'Acceso denegado',
+    listOnlyAccess: 'Acceso por lista',
+    approvedMsg: '✅ Estás aprobado. Ya puedes registrarte.',
+    pendingMsg: '⏳ Tu solicitud está pendiente. Te avisaremos cuando el organizador apruebe.',
+    deniedMsg: '❌ El organizador negó el acceso a este evento.',
+    needsApprovalMsg: 'Este evento requiere aprobación. Pide acceso para continuar.',
+    sending: 'Enviando…',
+    close: 'Cerrar',
+    dismiss: 'Cerrar',
+    selectTierErr: 'Selecciona un tipo de ticket.',
+    needEmailErr: 'No pudimos leer tu email. Inicia sesión otra vez.',
+    checkoutFailed: 'El pago falló. Intenta de nuevo.',
+    unexpected: 'Respuesta inesperada del servidor. Intenta de nuevo.',
+    checkoutError: 'Error de pago. Intenta de nuevo.',
+    walletFail: 'Aún no se pudo generar el pase de Apple Wallet.',
+    walletProblem: 'Problema descargando el pase de Apple Wallet.',
+  },
+}
+
+const useT = (lang) => (key) => DICT[lang]?.[key] ?? DICT.en[key] ?? key
+
+function formatDate(isoString, lang) {
   const date = new Date(isoString)
-  return date.toLocaleString('en-US', {
+  const locale = lang === 'es' ? 'es-VE' : 'en-US'
+  return date.toLocaleString(locale, {
     weekday: 'long',
     month: 'long',
     day: 'numeric',
@@ -50,7 +147,7 @@ function formatDate(isoString) {
 }
 
 // Small inline notice so you don't need extra files
-function Notice({ type = 'error', message, onRetry, onDismiss }) {
+function Notice({ type = 'error', message, onRetry, onDismiss, dismissLabel = 'Dismiss', retryLabel = 'Retry' }) {
   if (!message) return null
   const cls =
     type === 'error'
@@ -65,12 +162,12 @@ function Notice({ type = 'error', message, onRetry, onDismiss }) {
         <div style={{ display: 'flex', gap: 8 }}>
           {onRetry && (
             <button className="btn-secondary" onClick={onRetry} type="button">
-              Retry
+              {retryLabel}
             </button>
           )}
           {onDismiss && (
             <button className="btn-secondary" onClick={onDismiss} type="button">
-              Dismiss
+              {dismissLabel}
             </button>
           )}
         </div>
@@ -84,6 +181,17 @@ export default function EventDetailPage() {
   const [searchParams] = useSearchParams()
   const rawRef = searchParams.get('ref')
   const refCode = rawRef ? decodeURIComponent(rawRef) : null
+
+  // ✅ language
+  const [lang, setLang] = useState(getInitialLang())
+  const t = useMemo(() => useT(lang), [lang])
+
+  const toggleLang = () => {
+    const next = lang === 'en' ? 'es' : 'en'
+    setLang(next)
+    localStorage.setItem(LANG_KEY, next)
+    window.dispatchEvent(new Event('wknd:lang'))
+  }
 
   const [event, setEvent] = useState(null)
 
@@ -120,6 +228,13 @@ export default function EventDetailPage() {
   const isLoggedIn = !!token
   const requiresWaitlist = !!event?.listOnly
   const showAppleWallet = useMemo(() => canShowAppleWallet() && isLoggedIn, [isLoggedIn])
+
+  // Keep in sync if another page toggles language
+  useEffect(() => {
+    const onLang = () => setLang(getInitialLang())
+    window.addEventListener('wknd:lang', onLang)
+    return () => window.removeEventListener('wknd:lang', onLang)
+  }, [])
 
   // Mark iOS Safari on <html> so CSS can disable blur/backdrop
   useEffect(() => {
@@ -177,7 +292,7 @@ export default function EventDetailPage() {
       setEvent(data)
     } catch (e) {
       console.error('❌ Event load error:', e)
-      setEventErrMsg('We couldn’t load this event. Please try again.')
+      setEventErrMsg(t('couldntLoadBody'))
     } finally {
       setEventLoading(false)
     }
@@ -186,7 +301,7 @@ export default function EventDetailPage() {
   useEffect(() => {
     loadEvent()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id])
+  }, [id, lang])
 
   // ✅ Share helpers (works on iOS + desktop)
   const getShareUrl = () => {
@@ -199,27 +314,26 @@ export default function EventDetailPage() {
   const handleShare = async () => {
     const url = getShareUrl()
     const title = event?.title ? `WKND — ${event.title}` : 'WKND Event'
-    const text = event?.title ? `Check out: ${event.title}` : 'Check out this WKND event'
+    const text = event?.title
+      ? (lang === 'es' ? `Mira este evento: ${event.title}` : `Check out: ${event.title}`)
+      : (lang === 'es' ? 'Mira este evento de WKND' : 'Check out this WKND event')
 
     setShareMsg(null)
     setShareBusy(true)
 
     try {
-      // Native share sheet (mobile)
       if (navigator.share) {
         await navigator.share({ title, text, url })
-        setShareMsg('Shared!')
+        setShareMsg(t('shared'))
         return
       }
 
-      // Clipboard (desktop)
       if (navigator.clipboard?.writeText) {
         await navigator.clipboard.writeText(url)
-        setShareMsg('Link copied!')
+        setShareMsg(t('linkCopied'))
         return
       }
 
-      // Fallback copy (older iOS / browsers)
       const ta = document.createElement('textarea')
       ta.value = url
       ta.setAttribute('readonly', '')
@@ -231,11 +345,10 @@ export default function EventDetailPage() {
 
       const ok = document.execCommand('copy')
       ta.remove()
-      setShareMsg(ok ? 'Link copied!' : 'Copy failed — please copy from the address bar.')
+      setShareMsg(ok ? t('linkCopied') : t('copyFailed'))
     } catch (e) {
-      // User canceled the share sheet
       if (String(e?.name || '').toLowerCase() === 'aborterror') return
-      setShareMsg('Could not share. Try copying the link.')
+      setShareMsg(t('shareFailed'))
     } finally {
       setShareBusy(false)
       setTimeout(() => setShareMsg(null), 1600)
@@ -307,7 +420,7 @@ export default function EventDetailPage() {
         pickDefault(list.length ? list : event?.ticketTiers || [])
       } catch (e) {
         console.warn('⚠️ tiers error, using fallback:', e.message)
-        setTiersErr('Couldn’t load ticket tiers. You can retry.')
+        setTiersErr(lang === 'es' ? 'No se pudieron cargar los tickets. Reintenta.' : 'Couldn’t load ticket tiers. You can retry.')
         pickDefault(event?.ticketTiers || [])
       } finally {
         setTiersLoading(false)
@@ -315,7 +428,7 @@ export default function EventDetailPage() {
     }
     load()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showPopup, id])
+  }, [showPopup, id, lang])
 
   // ---- VES rate in event
   const vesRate =
@@ -433,12 +546,12 @@ export default function EventDetailPage() {
         return
       }
       if (!email) {
-        setCheckoutErrMsg('We couldn’t read your email. Please log in again.')
+        setCheckoutErrMsg(t('needEmailErr'))
         setShowAuth(true)
         return
       }
       if (!selectedTierId) {
-        setCheckoutErrMsg('Please select a ticket tier.')
+        setCheckoutErrMsg(t('selectTierErr'))
         return
       }
 
@@ -465,7 +578,6 @@ export default function EventDetailPage() {
         body: JSON.stringify(body),
       })
 
-      // if server returns non-json sometimes, keep resilient
       let data = null
       try {
         data = await res.json()
@@ -474,7 +586,7 @@ export default function EventDetailPage() {
       }
 
       if (!res.ok) {
-        const msg = data?.error || data?.message || 'Checkout failed. Please try again.'
+        const msg = data?.error || data?.message || t('checkoutFailed')
         setCheckoutErrMsg(msg)
         return
       }
@@ -512,10 +624,10 @@ export default function EventDetailPage() {
         return
       }
 
-      setCheckoutErrMsg(data?.error || 'Unexpected server response. Please try again.')
+      setCheckoutErrMsg(data?.error || t('unexpected'))
     } catch (err) {
       console.error('❌ Checkout failed:', err)
-      setCheckoutErrMsg('Checkout error. Please try again.')
+      setCheckoutErrMsg(t('checkoutError'))
     } finally {
       setCheckingOut(false)
       clickedOnceRef.current = false
@@ -530,8 +642,8 @@ export default function EventDetailPage() {
     try {
       const res = await fetchWithAuth(PASS_URL_FOR_EVENT(id), { method: 'GET' })
       if (!res.ok) {
-        const t = await res.text().catch(() => '')
-        setCheckoutErrMsg(t || 'Unable to generate Apple Wallet pass yet.')
+        const ttxt = await res.text().catch(() => '')
+        setCheckoutErrMsg(ttxt || t('walletFail'))
         return
       }
       const blob = await res.blob()
@@ -545,7 +657,7 @@ export default function EventDetailPage() {
       setTimeout(() => URL.revokeObjectURL(url), 2500)
     } catch (e) {
       console.error(e)
-      setCheckoutErrMsg('Problem downloading Apple Wallet pass.')
+      setCheckoutErrMsg(t('walletProblem'))
     }
   }
 
@@ -554,11 +666,17 @@ export default function EventDetailPage() {
     return (
       <div className="event-loading">
         <div className="loader-card">
+          <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+            <button className="btn-secondary" onClick={toggleLang} type="button">
+              {lang === 'en' ? 'ES' : 'EN'}
+            </button>
+          </div>
+
           <div className="loader-top">
             <div className="loader-spinner" aria-hidden="true" />
             <div>
-              <div className="loader-title">Loading event</div>
-              <div className="loader-sub">Fetching details, tiers, and location…</div>
+              <div className="loader-title">{t('loadingEvent')}</div>
+              <div className="loader-sub">{t('loadingSub')}</div>
             </div>
           </div>
 
@@ -580,15 +698,21 @@ export default function EventDetailPage() {
     return (
       <div className="event-error">
         <div className="loader-card">
-          <div className="loader-title">Couldn’t load this event</div>
+          <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+            <button className="btn-secondary" onClick={toggleLang} type="button">
+              {lang === 'en' ? 'ES' : 'EN'}
+            </button>
+          </div>
+
+          <div className="loader-title">{t('couldntLoadTitle')}</div>
           <div className="loader-sub">{eventErrMsg}</div>
 
           <div className="loader-actions">
             <button className="btn-primary" onClick={loadEvent} type="button">
-              Retry
+              {t('retry')}
             </button>
             <button className="btn-secondary" onClick={() => window.location.reload()} type="button">
-              Reload
+              {t('reload')}
             </button>
           </div>
         </div>
@@ -596,17 +720,17 @@ export default function EventDetailPage() {
     )
   }
 
-  if (!event) return <div className="event-loading">Loading event...</div>
+  if (!event) return <div className="event-loading">{t('loadingEvent')}...</div>
 
   const registerLabel = requiresWaitlist
     ? waitlistStatus === 'approved'
-      ? 'Buy'
+      ? t('buy')
       : waitlistStatus === 'pending'
-      ? 'Request Pending'
+      ? t('requestPending')
       : waitlistStatus === 'denied'
-      ? 'Access Denied'
-      : 'Request Access'
-    : 'Register'
+      ? t('accessDenied')
+      : t('requestAccess')
+    : t('register')
 
   const onRegisterClick = () => {
     if (!isLoggedIn) {
@@ -671,22 +795,31 @@ export default function EventDetailPage() {
       </div>
 
       <div className="event-content">
+        {/* Language toggle */}
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
+          <button className="btn-secondary" onClick={toggleLang} type="button">
+            {lang === 'en' ? 'ES' : 'EN'}
+          </button>
+        </div>
+
         <h1 className="event-title">{event?.title}</h1>
-        <p className="event-date">📅 {event?.dateTime ? formatDate(event.dateTime) : ''}</p>
+        <p className="event-date">📅 {event?.dateTime ? formatDate(event.dateTime, lang) : ''}</p>
         <p className="event-location">📍 {event?.location || ''}</p>
 
-        {/* ✅ Checkout errors show here (no blank / no only-alert) */}
-        <Notice type="error" message={checkoutErrMsg} onDismiss={() => setCheckoutErrMsg(null)} />
-
-        {/* ✅ Share feedback */}
-        <Notice type="info" message={shareMsg} onDismiss={() => setShareMsg(null)} />
+        <Notice
+          type="error"
+          message={checkoutErrMsg}
+          onDismiss={() => setCheckoutErrMsg(null)}
+          dismissLabel={t('dismiss')}
+        />
+        <Notice type="info" message={shareMsg} onDismiss={() => setShareMsg(null)} dismissLabel={t('dismiss')} />
 
         {requiresWaitlist && (
           <div className="waitlist-banner">
-            {waitlistStatus === 'approved' && <span className="chip ok">✅ Approved</span>}
-            {waitlistStatus === 'pending' && <span className="chip warn">⏳ Pending approval</span>}
-            {waitlistStatus === 'denied' && <span className="chip bad">❌ Access denied</span>}
-            {!waitlistStatus && <span className="chip info">📝 List-only event</span>}
+            {waitlistStatus === 'approved' && <span className="chip ok">✅ {t('approved')}</span>}
+            {waitlistStatus === 'pending' && <span className="chip warn">⏳ {t('pending')}</span>}
+            {waitlistStatus === 'denied' && <span className="chip bad">❌ {t('denied')}</span>}
+            {!waitlistStatus && <span className="chip info">📝 {t('listOnly')}</span>}
           </div>
         )}
 
@@ -695,17 +828,17 @@ export default function EventDetailPage() {
             {registerLabel}
           </button>
           <button className="btn-secondary" onClick={handleShare} disabled={shareBusy}>
-            {shareBusy ? 'Sharing…' : 'Share'}
+            {shareBusy ? t('sharing') : t('share')}
           </button>
         </div>
 
         <div className="event-about">
-          <h3>About</h3>
-          <p>{event?.description || 'No description provided.'}</p>
+          <h3>{t('about')}</h3>
+          <p>{event?.description || (lang === 'es' ? 'Sin descripción.' : 'No description provided.')}</p>
         </div>
 
         <div className="event-map">
-          <h3>Location</h3>
+          <h3>{t('location')}</h3>
           {hasLatLng ? (
             <div style={{ height: '300px', borderRadius: '16px', overflow: 'hidden', marginTop: '12px' }}>
               <MapContainer
@@ -726,7 +859,7 @@ export default function EventDetailPage() {
               </MapContainer>
             </div>
           ) : (
-            <div className="map-placeholder">Map not available.</div>
+            <div className="map-placeholder">{t('mapNA')}</div>
           )}
         </div>
       </div>
@@ -756,11 +889,7 @@ export default function EventDetailPage() {
               <span>@wknd</span>
             </a>
 
-            <a
-              className="footer-link"
-              href="mailto:support@wknd.events?subject=WKND%20Support"
-              title="Contact support"
-            >
+            <a className="footer-link" href="mailto:support@wknd.events?subject=WKND%20Support" title="Contact support">
               <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
                 <path
                   fill="currentColor"
@@ -775,7 +904,6 @@ export default function EventDetailPage() {
         </div>
       </footer>
 
-      {/* AUTH MODAL — safe overlay (no early return) */}
       <AuthModal
         isOpen={showAuth && !isLoggedIn}
         onClose={() => {
@@ -784,35 +912,32 @@ export default function EventDetailPage() {
         }}
       />
 
-      {/* WAITLIST MODAL */}
       {waitlistModal && (
         <div className="popup-overlay" onClick={closeWaitlistModal}>
           <div className="popup-modal small" onClick={(e) => e.stopPropagation()}>
-            <h3>List-Only Access</h3>
-            {waitlistStatus === 'approved' && <p className="muted">✅ You’re approved. You can register now.</p>}
-            {waitlistStatus === 'pending' && (
-              <p className="muted">⏳ Your request is pending. We’ll notify you when the organizer approves.</p>
-            )}
-            {waitlistStatus === 'denied' && <p className="muted">❌ The organizer denied access for this event.</p>}
-            {!waitlistStatus && <p className="muted">This event requires approval. Request access to continue.</p>}
+            <h3>{t('listOnlyAccess')}</h3>
+            {waitlistStatus === 'approved' && <p className="muted">{t('approvedMsg')}</p>}
+            {waitlistStatus === 'pending' && <p className="muted">{t('pendingMsg')}</p>}
+            {waitlistStatus === 'denied' && <p className="muted">{t('deniedMsg')}</p>}
+            {!waitlistStatus && <p className="muted">{t('needsApprovalMsg')}</p>}
 
             <div className="waitlist-actions">
               {!waitlistStatus && (
                 <button className="btn-primary" disabled={waitlistBusy} onClick={requestWaitlistAccess}>
-                  {waitlistBusy ? 'Sending…' : 'Request Access'}
+                  {waitlistBusy ? t('sending') : t('requestAccess')}
                 </button>
               )}
               <button className="btn-secondary" onClick={closeWaitlistModal}>
-                Close
+                {t('close')}
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* REGISTER POPUP */}
       {showPopup && (
         <RegisterPopup
+          lang={lang}
           eventId={id}
           tiers={tiers.length ? tiers : event.ticketTiers || []}
           loading={tiersLoading}
@@ -838,7 +963,6 @@ export default function EventDetailPage() {
         />
       )}
 
-      {/* STRIPE CARD FORM */}
       {clientSecret && (
         <div className="popup-overlay" onClick={() => setClientSecret(null)}>
           <div className="popup-modal" onClick={(e) => e.stopPropagation()}>

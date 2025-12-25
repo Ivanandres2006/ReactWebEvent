@@ -1,9 +1,75 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import './AuthModal.css'
 import { saveTokens } from '../lib/authClient'
 
 const API = 'https://backendevent-etce.onrender.com'
+
+// ---- i18n
+const LANG_KEY = 'wknd_lang'
+const getInitialLang = () => {
+  const saved = localStorage.getItem(LANG_KEY)
+  if (saved === 'en' || saved === 'es') return saved
+  const nav = (navigator.language || '').toLowerCase()
+  return nav.startsWith('es') ? 'es' : 'en'
+}
+const DICT = {
+  en: {
+    dismiss: 'Dismiss',
+    welcomeBack: 'Welcome Back',
+    createAccount: 'Create Account',
+    firstName: 'First Name',
+    lastName: 'Last Name',
+    username: 'Username',
+    email: 'Email',
+    password: 'Password',
+    loading: 'Loading...',
+    login: 'Login',
+    signUp: 'Sign Up',
+    noAccount: "Don't have an account?",
+    haveAccount: 'Already have an account?',
+    verifyEmail: 'Verify Your Email',
+    sentCode: "We’ve sent a 6-digit code to",
+    enterCode: 'Enter verification code',
+    verifying: 'Verifying...',
+    verify: 'Verify',
+    loginFailed: 'Login failed. Please try again.',
+    registerFailed: 'Registration failed. Please try again.',
+    tokenMissing: 'Login succeeded but no access token was returned.',
+    verifyTokenMissing: 'Verification succeeded but no access token was returned.',
+    networkError: 'Network error. Please try again.',
+    verifyFailed: 'Verification failed. Please try again.',
+    invalidCode: 'Invalid verification code.',
+  },
+  es: {
+    dismiss: 'Cerrar',
+    welcomeBack: 'Bienvenido de nuevo',
+    createAccount: 'Crear cuenta',
+    firstName: 'Nombre',
+    lastName: 'Apellido',
+    username: 'Usuario',
+    email: 'Email',
+    password: 'Contraseña',
+    loading: 'Cargando…',
+    login: 'Entrar',
+    signUp: 'Crear',
+    noAccount: '¿No tienes cuenta?',
+    haveAccount: '¿Ya tienes cuenta?',
+    verifyEmail: 'Verifica tu email',
+    sentCode: 'Enviamos un código de 6 dígitos a',
+    enterCode: 'Ingresa el código',
+    verifying: 'Verificando…',
+    verify: 'Verificar',
+    loginFailed: 'No se pudo iniciar sesión. Intenta de nuevo.',
+    registerFailed: 'No se pudo registrar. Intenta de nuevo.',
+    tokenMissing: 'Inició sesión pero no llegó el token.',
+    verifyTokenMissing: 'Verificado pero no llegó el token.',
+    networkError: 'Error de red. Intenta de nuevo.',
+    verifyFailed: 'No se pudo verificar. Intenta de nuevo.',
+    invalidCode: 'Código inválido.',
+  },
+}
+const useT = (lang) => (key) => DICT[lang]?.[key] ?? DICT.en[key] ?? key
 
 function compactPayload(obj) {
   const out = {}
@@ -15,14 +81,14 @@ function compactPayload(obj) {
   return out
 }
 
-function InlineError({ message, onDismiss }) {
+function InlineError({ message, onDismiss, dismissLabel = 'Dismiss' }) {
   if (!message) return null
   return (
     <div className="auth-error">
       <div className="auth-error-row">
         <span>{message}</span>
         <button className="auth-error-btn" onClick={onDismiss} type="button">
-          Dismiss
+          {dismissLabel}
         </button>
       </div>
     </div>
@@ -30,6 +96,22 @@ function InlineError({ message, onDismiss }) {
 }
 
 export default function AuthModal({ isOpen, onClose }) {
+  const [lang, setLang] = useState(getInitialLang())
+  const t = useMemo(() => useT(lang), [lang])
+
+  const toggleLang = () => {
+    const next = lang === 'en' ? 'es' : 'en'
+    setLang(next)
+    localStorage.setItem(LANG_KEY, next)
+    window.dispatchEvent(new Event('wknd:lang'))
+  }
+
+  useEffect(() => {
+    const onLang = () => setLang(getInitialLang())
+    window.addEventListener('wknd:lang', onLang)
+    return () => window.removeEventListener('wknd:lang', onLang)
+  }, [])
+
   const [isLogin, setIsLogin] = useState(true)
   const [step, setStep] = useState('auth')
   const [loading, setLoading] = useState(false)
@@ -87,21 +169,19 @@ export default function AuthModal({ isOpen, onClose }) {
         }
 
         if (!res.ok) {
-          setErrMsg(data?.message || 'Login failed. Please try again.')
+          setErrMsg(data?.message || t('loginFailed'))
           setLoading(false)
           return
         }
 
         const access = data?.accessToken || data?.token || data?.jwt || ''
         if (!access) {
-          setErrMsg('Login succeeded but no access token was returned.')
+          setErrMsg(t('tokenMissing'))
           setLoading(false)
           return
         }
 
         saveTokens({ accessToken: access, refreshToken: data?.refreshToken })
-
-        // let other parts of app react to login
         window.dispatchEvent(new Event('auth:login'))
 
         setLoading(false)
@@ -109,7 +189,6 @@ export default function AuthModal({ isOpen, onClose }) {
         return
       }
 
-      // Register
       const raw = {
         firstName: form.firstName,
         lastName: form.lastName,
@@ -134,16 +213,16 @@ export default function AuthModal({ isOpen, onClose }) {
       }
 
       if (!res.ok) {
-        setErrMsg(data?.message || 'Registration failed. Please try again.')
+        setErrMsg(data?.message || t('registerFailed'))
         setLoading(false)
         return
       }
 
       setLoading(false)
       setStep('verify')
-    } catch (err) {
+    } catch {
       setLoading(false)
-      setErrMsg('Network error. Please try again.')
+      setErrMsg(t('networkError'))
     }
   }
 
@@ -171,14 +250,14 @@ export default function AuthModal({ isOpen, onClose }) {
       }
 
       if (!res.ok) {
-        setErrMsg(data?.message || 'Invalid verification code.')
+        setErrMsg(data?.message || t('invalidCode'))
         setLoading(false)
         return
       }
 
       const access = data?.accessToken || data?.token || data?.jwt || ''
       if (!access) {
-        setErrMsg('Verification succeeded but no access token was returned.')
+        setErrMsg(t('verifyTokenMissing'))
         setLoading(false)
         return
       }
@@ -190,7 +269,7 @@ export default function AuthModal({ isOpen, onClose }) {
       onClose()
     } catch {
       setLoading(false)
-      setErrMsg('Verification failed. Please try again.')
+      setErrMsg(t('verifyFailed'))
     }
   }
 
@@ -203,31 +282,37 @@ export default function AuthModal({ isOpen, onClose }) {
         aria-modal="true"
         aria-label={step === 'auth' ? (isLogin ? 'Login' : 'Sign Up') : 'Verify Email'}
       >
-        <InlineError message={errMsg} onDismiss={() => setErrMsg(null)} />
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
+          <button className="auth-error-btn" onClick={toggleLang} type="button">
+            {lang === 'en' ? 'ES' : 'EN'}
+          </button>
+        </div>
+
+        <InlineError message={errMsg} onDismiss={() => setErrMsg(null)} dismissLabel={t('dismiss')} />
 
         {step === 'auth' && (
           <>
-            <h2>{isLogin ? 'Welcome Back' : 'Create Account'}</h2>
+            <h2>{isLogin ? t('welcomeBack') : t('createAccount')}</h2>
             <form onSubmit={handleAuthSubmit}>
               {!isLogin && (
                 <>
                   <input
                     type="text"
-                    placeholder="First Name"
+                    placeholder={t('firstName')}
                     value={form.firstName}
                     onChange={(e) => setForm({ ...form, firstName: e.target.value })}
                     required
                   />
                   <input
                     type="text"
-                    placeholder="Last Name"
+                    placeholder={t('lastName')}
                     value={form.lastName}
                     onChange={(e) => setForm({ ...form, lastName: e.target.value })}
                     required
                   />
                   <input
                     type="text"
-                    placeholder="Username"
+                    placeholder={t('username')}
                     value={form.username}
                     onChange={(e) => setForm({ ...form, username: e.target.value })}
                     required
@@ -237,26 +322,26 @@ export default function AuthModal({ isOpen, onClose }) {
 
               <input
                 type="text"
-                placeholder="Email"
+                placeholder={t('email')}
                 value={form.emailOrUsername}
                 onChange={(e) => setForm({ ...form, emailOrUsername: e.target.value })}
                 required
               />
               <input
                 type="password"
-                placeholder="Password"
+                placeholder={t('password')}
                 value={form.password}
                 onChange={(e) => setForm({ ...form, password: e.target.value })}
                 required
               />
 
               <button type="submit" disabled={loading}>
-                {loading ? 'Loading...' : isLogin ? 'Login' : 'Sign Up'}
+                {loading ? t('loading') : isLogin ? t('login') : t('signUp')}
               </button>
             </form>
 
             <p className="toggle-text">
-              {isLogin ? "Don't have an account?" : 'Already have an account?'}{' '}
+              {isLogin ? t('noAccount') : t('haveAccount')}{' '}
               <span
                 onClick={() => {
                   setIsLogin(!isLogin)
@@ -264,7 +349,7 @@ export default function AuthModal({ isOpen, onClose }) {
                   setErrMsg(null)
                 }}
               >
-                {isLogin ? 'Sign Up' : 'Login'}
+                {isLogin ? t('signUp') : t('login')}
               </span>
             </p>
           </>
@@ -272,21 +357,21 @@ export default function AuthModal({ isOpen, onClose }) {
 
         {step === 'verify' && (
           <>
-            <h2>Verify Your Email</h2>
+            <h2>{t('verifyEmail')}</h2>
             <p className="subtext">
-              We’ve sent a 6-digit code to <strong>{form.emailOrUsername}</strong>
+              {t('sentCode')} <strong>{form.emailOrUsername}</strong>
             </p>
             <form onSubmit={handleVerifySubmit}>
               <input
                 type="text"
                 maxLength="6"
-                placeholder="Enter verification code"
+                placeholder={t('enterCode')}
                 value={verificationCode}
                 onChange={(e) => setVerificationCode(e.target.value)}
                 required
               />
               <button type="submit" disabled={loading}>
-                {loading ? 'Verifying...' : 'Verify'}
+                {loading ? t('verifying') : t('verify')}
               </button>
             </form>
           </>

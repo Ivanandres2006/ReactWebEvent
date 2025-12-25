@@ -4,6 +4,83 @@ import { fetchWithAuth, getAccessToken } from '../lib/authClient'
 
 const API = 'https://backendevent-etce.onrender.com'
 
+// ---- i18n
+const DICT = {
+  en: {
+    selectTicket: 'Select Your Ticket',
+    loadingTiers: 'Loading tiers…',
+    noTiers: 'No tiers available.',
+    quantity: 'Quantity',
+    discount: 'Discount',
+    clear: 'Clear',
+    calculating: 'Calculating fees…',
+    estimateHint: 'Showing estimate. Final totals may appear at checkout.',
+    card: 'Card',
+    cash: 'Cash',
+    attachReceipt: 'Attach receipt (image)',
+    onlyImages: 'Only image files are allowed.',
+    tooLarge: 'Image too large (max 8MB).',
+    needReceipt: 'Please attach the receipt image before paying.',
+    manualHint: 'Manual methods notify the organizer. You’ll get your ticket by email after they confirm.',
+    payCard: 'Pay with card',
+    processing: 'Processing…',
+    sending: 'Sending…',
+    pay: 'Pay',
+    afterPayNotify: 'After paying, press Pay to notify the organizer.',
+    soldOut: '❌ Sold out',
+    notAvailableYet: '⏰ Not yet available',
+    available: 'Available',
+    left: 'left',
+    platformFee: 'Platform fee',
+    stripeFee: 'Stripe fee',
+    serviceFee: 'Service fee',
+    total: 'Total',
+    totalEst: 'Total (est.)',
+    subtotal: 'Subtotal',
+    discountLabel: 'Discount',
+    newSubtotal: 'New subtotal',
+    dismiss: 'Dismiss',
+    feeFail: 'We couldn’t calculate fees right now. You can still continue — totals may show at checkout.',
+  },
+  es: {
+    selectTicket: 'Selecciona tu ticket',
+    loadingTiers: 'Cargando tickets…',
+    noTiers: 'No hay tickets disponibles.',
+    quantity: 'Cantidad',
+    discount: 'Descuento',
+    clear: 'Quitar',
+    calculating: 'Calculando cargos…',
+    estimateHint: 'Mostrando estimado. El total final puede aparecer al pagar.',
+    card: 'Tarjeta',
+    cash: 'Efectivo',
+    attachReceipt: 'Adjuntar recibo (imagen)',
+    onlyImages: 'Solo se permiten imágenes.',
+    tooLarge: 'Imagen muy grande (máx 8MB).',
+    needReceipt: 'Adjunta el recibo antes de pagar.',
+    manualHint: 'Los métodos manuales notifican al organizador. Recibirás el ticket por email cuando confirmen.',
+    payCard: 'Pagar con tarjeta',
+    processing: 'Procesando…',
+    sending: 'Enviando…',
+    pay: 'Pagar',
+    afterPayNotify: 'Después de pagar, presiona Pagar para notificar al organizador.',
+    soldOut: '❌ Agotado',
+    notAvailableYet: '⏰ Aún no disponible',
+    available: 'Disponible',
+    left: 'disponibles',
+    platformFee: 'Cargo de plataforma',
+    stripeFee: 'Cargo de Stripe',
+    serviceFee: 'Cargo de servicio',
+    total: 'Total',
+    totalEst: 'Total (est.)',
+    subtotal: 'Subtotal',
+    discountLabel: 'Descuento',
+    newSubtotal: 'Nuevo subtotal',
+    dismiss: 'Cerrar',
+    feeFail: 'No pudimos calcular los cargos. Igual puedes continuar — el total puede aparecer al pagar.',
+  },
+}
+const useT = (lang) => (key) => DICT[lang]?.[key] ?? DICT.en[key] ?? key
+
 // Fallbacks so we always render something even if everything fails
 const FALLBACK_VES_RATE = 179.43
 const ENV_VES_RATE = Number(import.meta?.env?.VITE_VES_PER_USD || 0)
@@ -14,14 +91,14 @@ const BCV_RATE_KEY = 'ves_rate_bcv'
 const BCV_TS_KEY = 'ves_rate_bcv_ts'
 const BCV_TTL_MS = 30 * 60 * 1000 // 30 minutes
 
-function InlineNotice({ message, onDismiss }) {
+function InlineNotice({ message, onDismiss, dismissLabel = 'Dismiss' }) {
   if (!message) return null
   return (
     <div className="inline-notice">
       <div className="inline-notice-row">
         <span>{message}</span>
         <button className="inline-notice-btn" onClick={onDismiss} type="button">
-          Dismiss
+          {dismissLabel}
         </button>
       </div>
     </div>
@@ -29,6 +106,7 @@ function InlineNotice({ message, onDismiss }) {
 }
 
 export default function RegisterPopup({
+  lang = 'en',
   eventId,
   tiers,
   loading = false,
@@ -42,30 +120,26 @@ export default function RegisterPopup({
   onQuantityChange,
   onPay,
 }) {
+  const t = useMemo(() => useT(lang), [lang])
+
   const [method, setMethod] = useState('card')
 
   const [fee, setFee] = useState(null)
   const [feeLoading, setFeeLoading] = useState(false)
   const [feeHadError, setFeeHadError] = useState(false)
-
-  // ✅ user-friendly message for fee failures
   const [uiErr, setUiErr] = useState(null)
 
-  // Discount code
   const [discountCode, setDiscountCode] = useState('')
   const [discountMessage, setDiscountMessage] = useState(null)
   const [lastAppliedCode, setLastAppliedCode] = useState(null)
 
-  // Receipt
   const [receiptFile, setReceiptFile] = useState(null)
   const [receiptPreview, setReceiptPreview] = useState('')
   const [receiptError, setReceiptError] = useState('')
 
-  // Live BCV
   const [bcvRate, setBcvRate] = useState(0)
   const [bcvSource, setBcvSource] = useState('')
 
-  // Token
   const [token, setToken] = useState(getAccessToken())
   useEffect(() => {
     const onAuth = () => setToken(getAccessToken())
@@ -79,7 +153,6 @@ export default function RegisterPopup({
     }
   }, [receiptPreview])
 
-  // Detect Venezuela -> hide Card
   const isVenezuela = useMemo(() => {
     const country = String(payments?.country || payments?.pagoMovil?.country || '').toLowerCase()
     const currency = String(payments?.currency || '').toUpperCase()
@@ -92,13 +165,11 @@ export default function RegisterPopup({
   const showCash = !!payments?.cash?.enabled
   const showCard = !isVenezuela
 
-  // Fetch BCV
   useEffect(() => {
     let cancelled = false
     let intervalId
 
-    const isBadCache = (val) =>
-      val === FALLBACK_VES_RATE || (ENV_VES_RATE > 0 && val === ENV_VES_RATE)
+    const isBadCache = (val) => val === FALLBACK_VES_RATE || (ENV_VES_RATE > 0 && val === ENV_VES_RATE)
 
     const readCacheFresh = () => {
       const cached = Number(localStorage.getItem(BCV_RATE_KEY) || 0)
@@ -155,7 +226,6 @@ export default function RegisterPopup({
     }
   }, [])
 
-  // If Card is hidden but selected, auto-switch
   useEffect(() => {
     if (!showCard && method === 'card') {
       if (showPM) setMethod('pagoMovil')
@@ -164,7 +234,6 @@ export default function RegisterPopup({
     }
   }, [showCard, showPM, showZelle, showCash, method])
 
-  // Currency formatting
   const useVES = method === 'pagoMovil'
 
   const incomingRate = useMemo(() => {
@@ -221,47 +290,48 @@ export default function RegisterPopup({
           ),
         ]
 
-  // Availability helpers
-  const isSoldOut = (t) => Number(t?.availableQuantity ?? 0) <= 0
-  const hasNotStarted = (t, now) => (t?.startTime ? now < new Date(t.startTime) : false)
-  const hasEnded = (t, now) => (t?.endTime ? now > new Date(t.endTime) : false)
-  const isLockedByTime = (t, now) => (!t?.forceOpen && hasNotStarted(t, now)) || hasEnded(t, now)
+  const isSoldOut = (tier) => Number(tier?.availableQuantity ?? 0) <= 0
+  const hasNotStarted = (tier, now) => (tier?.startTime ? now < new Date(tier.startTime) : false)
+  const hasEnded = (tier, now) => (tier?.endTime ? now > new Date(tier.endTime) : false)
+  const isLockedByTime = (tier, now) => (!tier?.forceOpen && hasNotStarted(tier, now)) || hasEnded(tier, now)
 
   const nextAvailableTierId = (list) => {
     const now = Date.now()
     const sorted = (list || []).slice().sort((a, b) => (a.tierOrder ?? 0) - (b.tierOrder ?? 0))
-    for (const t of sorted) if (!isSoldOut(t) && !isLockedByTime(t, now)) return t.id
+    for (const tier of sorted) if (!isSoldOut(tier) && !isLockedByTime(tier, now)) return tier.id
     return null
   }
   const nextId = useMemo(() => nextAvailableTierId(tiers || []), [tiers])
-  const isLockedByOrder = (t) => {
-    const force = !!t?.forceOpen
+
+  const isLockedByOrder = (tier) => {
+    const force = !!tier?.forceOpen
     if (force) return false
     if (nextId == null) return false
-    return t.id !== nextId
-  }
-  const isUnavailable = (t) => {
-    const now = Date.now()
-    return isSoldOut(t) || isLockedByTime(t, now) || isLockedByOrder(t)
+    return tier.id !== nextId
   }
 
-  const hasWindow = (t) => !!t?.startTime && !!t?.endTime
-  const fmtWindow = (t) => {
-    const s = t?.startTime ? new Date(t.startTime) : null
-    const e = t?.endTime ? new Date(t.endTime) : null
+  const isUnavailable = (tier) => {
+    const now = Date.now()
+    return isSoldOut(tier) || isLockedByTime(tier, now) || isLockedByOrder(tier)
+  }
+
+  const hasWindow = (tier) => !!tier?.startTime && !!tier?.endTime
+  const fmtWindow = (tier) => {
+    const s = tier?.startTime ? new Date(tier.startTime) : null
+    const e = tier?.endTime ? new Date(tier.endTime) : null
     const opts = { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }
     return s && e ? `${s.toLocaleString(undefined, opts)} – ${e.toLocaleString(undefined, opts)}` : ''
   }
 
-  const availabilityText = (t) => {
-    if (isSoldOut(t)) return '❌ Sold out'
-    if (hasNotStarted(t, Date.now()) && !t?.forceOpen) return '⏰ Not yet available'
-    const qty = Number(t?.availableQuantity ?? 0)
-    const hide = !!t?.hideQuantity
-    return hide ? 'Available' : `${qty} left`
+  const availabilityText = (tier) => {
+    if (isSoldOut(tier)) return t('soldOut')
+    if (hasNotStarted(tier, Date.now()) && !tier?.forceOpen) return t('notAvailableYet')
+    const qty = Number(tier?.availableQuantity ?? 0)
+    const hide = !!tier?.hideQuantity
+    return hide ? t('available') : `${qty} ${t('left')}`
   }
 
-  const selectedTier = useMemo(() => (tiers || []).find((t) => t?.id === selectedTierId), [tiers, selectedTierId])
+  const selectedTier = useMemo(() => (tiers || []).find((x) => x?.id === selectedTierId), [tiers, selectedTierId])
 
   const maxQty = useMemo(() => {
     const tierLeft = Number(selectedTier?.availableQuantity ?? 10)
@@ -277,23 +347,21 @@ export default function RegisterPopup({
   const selectedDisabled = useMemo(() => (selectedTier ? isUnavailable(selectedTier) : false), [selectedTier])
 
   const needsReceipt = method === 'zelle' || method === 'pagoMovil'
-
   const canPay = !!selectedTierId && quantity >= 1 && quantity <= maxQty && !selectedDisabled && !submitting
 
   const methodPretty =
-    method === 'pagoMovil' ? 'Pago Móvil' : method === 'zelle' ? 'Zelle' : method === 'cash' ? 'Cash' : 'card'
+    method === 'pagoMovil' ? 'Pago Móvil' : method === 'zelle' ? 'Zelle' : method === 'cash' ? t('cash') : t('card')
 
   const handleConfirm = () => {
     if (!canPay) return
     setUiErr(null)
     if (needsReceipt && !receiptFile) {
-      setReceiptError('Please attach the receipt image.')
+      setReceiptError(t('needReceipt'))
       return
     }
     onPay?.(method, { discountCode: discountCode.trim() || null, receiptFile: receiptFile || null })
   }
 
-  // Fee quote fetch
   useEffect(() => {
     setFeeHadError(false)
     setUiErr(null)
@@ -311,7 +379,7 @@ export default function RegisterPopup({
       try {
         setFeeLoading(true)
 
-        const sel = (tiers || []).find((t) => t?.id === selectedTierId)
+        const sel = (tiers || []).find((x) => x?.id === selectedTierId)
         const unitPriceCents = Math.round(Number(sel?.price || 0) * 100)
 
         const params = new URLSearchParams({
@@ -325,9 +393,7 @@ export default function RegisterPopup({
 
         const url = `${API}/api/tickets/quote?${params.toString()}`
         let res = await fetchWithAuth(url, { method: 'GET', signal: controller.signal })
-        if (!res.ok && res.status !== 401) {
-          res = await fetch(url, { method: 'GET', signal: controller.signal })
-        }
+        if (!res.ok && res.status !== 401) res = await fetch(url, { method: 'GET', signal: controller.signal })
         if (!res.ok) throw new Error(`fee ${res.status}`)
         const data = await res.json()
         if (!cancelled) {
@@ -339,7 +405,7 @@ export default function RegisterPopup({
         if (!cancelled) {
           setFee(null)
           setFeeHadError(true)
-          setUiErr('We couldn’t calculate fees right now. You can still continue — totals may show at checkout.')
+          setUiErr(t('feeFail'))
         }
       } finally {
         if (!cancelled) setFeeLoading(false)
@@ -359,42 +425,47 @@ export default function RegisterPopup({
     const priceUSD = Number(selectedTier?.price ?? 0)
 
     if (hasLive) {
-      const qtyText = selectedTier ? `${selectedTier.name} ×${quantity}` : 'Subtotal'
+      const qtyText = selectedTier ? `${selectedTier.name} ×${quantity}` : t('subtotal')
 
-      if (typeof fee.originalSubtotalCents === 'number' && fee.originalSubtotalCents > 0 && typeof fee.discountCentsApplied === 'number' && fee.discountCentsApplied > 0) {
-        rows.push({ label: `${qtyText} (subtotal)`, value: fmtCents(fee.originalSubtotalCents), strong: false })
+      if (
+        typeof fee.originalSubtotalCents === 'number' &&
+        fee.originalSubtotalCents > 0 &&
+        typeof fee.discountCentsApplied === 'number' &&
+        fee.discountCentsApplied > 0
+      ) {
+        rows.push({ label: `${qtyText} (${t('subtotal')})`, value: fmtCents(fee.originalSubtotalCents), strong: false })
         rows.push({
-          label: `Discount${(lastAppliedCode || discountCode) ? ` (${(lastAppliedCode || discountCode).toUpperCase()})` : ''}`,
+          label: `${t('discountLabel')}${(lastAppliedCode || discountCode) ? ` (${(lastAppliedCode || discountCode).toUpperCase()})` : ''}`,
           value: '− ' + fmtCents(fee.discountCentsApplied),
           strong: false,
         })
-        rows.push({ label: 'New subtotal', value: fmtCents(fee.subtotalCents), strong: false })
+        rows.push({ label: t('newSubtotal'), value: fmtCents(fee.subtotalCents), strong: false })
       } else {
         if (typeof fee.subtotalCents === 'number') rows.push({ label: qtyText, value: fmtCents(fee.subtotalCents), strong: false })
       }
 
-      if (typeof fee.platformFeeCents === 'number' && fee.platformFeeCents > 0) rows.push({ label: 'Platform fee', value: fmtCents(fee.platformFeeCents), strong: false })
-      if (method === 'card' && typeof fee.stripeFeeCents === 'number' && fee.stripeFeeCents > 0) rows.push({ label: 'Stripe fee', value: fmtCents(fee.stripeFeeCents), strong: false })
-      if (typeof fee.serviceFeeCents === 'number' && fee.serviceFeeCents > 0) rows.push({ label: 'Service fee', value: fmtCents(fee.serviceFeeCents), strong: false })
+      if (typeof fee.platformFeeCents === 'number' && fee.platformFeeCents > 0) rows.push({ label: t('platformFee'), value: fmtCents(fee.platformFeeCents), strong: false })
+      if (method === 'card' && typeof fee.stripeFeeCents === 'number' && fee.stripeFeeCents > 0) rows.push({ label: t('stripeFee'), value: fmtCents(fee.stripeFeeCents), strong: false })
+      if (typeof fee.serviceFeeCents === 'number' && fee.serviceFeeCents > 0) rows.push({ label: t('serviceFee'), value: fmtCents(fee.serviceFeeCents), strong: false })
 
-      rows.push({ label: 'Total', value: fmtCents(fee.totalCents), strong: true })
+      rows.push({ label: t('total'), value: fmtCents(fee.totalCents), strong: true })
       return { rows, isEstimate: false }
     }
 
     const subtotalCents = Math.round(priceUSD * 100 * quantity)
-    rows.push({ label: selectedTier ? `${selectedTier.name} ×${quantity}` : 'Subtotal', value: fmtCents(subtotalCents), strong: false })
-    rows.push({ label: 'Total (est.)', value: fmtCents(subtotalCents), strong: true })
+    rows.push({ label: selectedTier ? `${selectedTier.name} ×${quantity}` : t('subtotal'), value: fmtCents(subtotalCents), strong: false })
+    rows.push({ label: t('totalEst'), value: fmtCents(subtotalCents), strong: true })
     return { rows, isEstimate: true }
-  }, [fee, selectedTier, quantity, method, vesRate, lastAppliedCode, discountCode])
+  }, [fee, selectedTier, quantity, method, vesRate, lastAppliedCode, discountCode, t])
 
   const onReceiptPick = (file) => {
     if (!file) return
     if (!file.type.startsWith('image/')) {
-      setReceiptError('Only image files are allowed.')
+      setReceiptError(t('onlyImages'))
       return
     }
     if (file.size > 8 * 1024 * 1024) {
-      setReceiptError('Image too large (max 8MB).')
+      setReceiptError(t('tooLarge'))
       return
     }
     setReceiptError('')
@@ -413,16 +484,14 @@ export default function RegisterPopup({
   return (
     <div className="popup-overlay" onClick={onClose}>
       <div className="popup-modal" onClick={(e) => e.stopPropagation()}>
-        <h3>Select Your Ticket</h3>
+        <h3>{t('selectTicket')}</h3>
 
-        <InlineNotice message={uiErr} onDismiss={() => setUiErr(null)} />
+        <InlineNotice message={uiErr} onDismiss={() => setUiErr(null)} dismissLabel={t('dismiss')} />
 
         {loading ? (
-          <div className="empty-tiers">Loading tiers…</div>
+          <div className="empty-tiers">{t('loadingTiers')}</div>
         ) : error ? (
-          <div className="empty-tiers">
-            {typeof error === 'string' ? error : 'Couldn’t load tiers. Try again.'}
-          </div>
+          <div className="empty-tiers">{typeof error === 'string' ? error : (lang === 'es' ? 'No se pudieron cargar los tickets.' : 'Couldn’t load tiers. Try again.')}</div>
         ) : tiers?.length ? (
           tiers
             .slice()
@@ -452,11 +521,11 @@ export default function RegisterPopup({
               )
             })
         ) : (
-          <div className="empty-tiers">No tiers available.</div>
+          <div className="empty-tiers">{t('noTiers')}</div>
         )}
 
         <div className="ticket-quantity">
-          <label>Quantity</label>
+          <label>{t('quantity')}</label>
           <input
             type="number"
             min="1"
@@ -472,7 +541,7 @@ export default function RegisterPopup({
         </div>
 
         <div className="ticket-quantity" style={{ marginTop: 8 }}>
-          <label>Discount</label>
+          <label>{t('discount')}</label>
           <div style={{ display: 'flex', gap: 8, width: '100%' }}>
             <input
               type="text"
@@ -482,8 +551,16 @@ export default function RegisterPopup({
               style={{ flex: 1 }}
             />
             {discountCode && (
-              <button className="tab" onClick={() => { setDiscountCode(''); setLastAppliedCode(null); setDiscountMessage(null) }}>
-                Clear
+              <button
+                className="tab"
+                onClick={() => {
+                  setDiscountCode('')
+                  setLastAppliedCode(null)
+                  setDiscountMessage(null)
+                }}
+                type="button"
+              >
+                {t('clear')}
               </button>
             )}
           </div>
@@ -493,7 +570,7 @@ export default function RegisterPopup({
         {selectedTierId && quantity >= 1 && (
           <div className="fee-box" aria-live="polite">
             {feeLoading ? (
-              <div className="fee-row muted">Calculating fees…</div>
+              <div className="fee-row muted">{t('calculating')}</div>
             ) : (
               <>
                 {feeRows.rows.slice(0, -1).map((r, idx) => (
@@ -509,7 +586,7 @@ export default function RegisterPopup({
                     <span className="fee-value">{r.value}</span>
                   </div>
                 ))}
-                {feeHadError && <div className="fee-hint">Showing estimate. Final totals may appear at checkout.</div>}
+                {feeHadError && <div className="fee-hint">{t('estimateHint')}</div>}
               </>
             )}
           </div>
@@ -517,62 +594,60 @@ export default function RegisterPopup({
 
         <div className="method-tabs">
           {showCard && (
-            <button className={`tab ${method === 'card' ? 'active' : ''}`} onClick={() => setMethod('card')}>
-              Card
+            <button className={`tab ${method === 'card' ? 'active' : ''}`} onClick={() => setMethod('card')} type="button">
+              {t('card')}
             </button>
           )}
           {showPM && (
-            <button className={`tab ${method === 'pagoMovil' ? 'active' : ''}`} onClick={() => setMethod('pagoMovil')}>
+            <button className={`tab ${method === 'pagoMovil' ? 'active' : ''}`} onClick={() => setMethod('pagoMovil')} type="button">
               Pago Móvil
             </button>
           )}
           {showZelle && (
-            <button className={`tab ${method === 'zelle' ? 'active' : ''}`} onClick={() => setMethod('zelle')}>
+            <button className={`tab ${method === 'zelle' ? 'active' : ''}`} onClick={() => setMethod('zelle')} type="button">
               Zelle
             </button>
           )}
           {showCash && (
-            <button className={`tab ${method === 'cash' ? 'active' : ''}`} onClick={() => setMethod('cash')}>
-              Cash
+            <button className={`tab ${method === 'cash' ? 'active' : ''}`} onClick={() => setMethod('cash')} type="button">
+              {t('cash')}
             </button>
           )}
         </div>
 
         {method !== 'card' && (
           <div className="alt-details">
-            {method === 'pagoMovil' && showPM && (
+            {(method === 'pagoMovil' || method === 'zelle' || method === 'cash') && (
               <div className="alt-box">
-                {payments?.pagoMovil?.phone && <div>📱 {payments.pagoMovil.phone}</div>}
-                {payments?.pagoMovil?.ci && <div>🪪 CI: {payments.pagoMovil.ci}</div>}
-                {payments?.pagoMovil?.bank && <div>🏦 {payments.pagoMovil.bank}</div>}
-                <div className="alt-note">
-                  After paying via Pago Móvil, press <strong>Pay</strong> to notify the organizer.
-                </div>
-              </div>
-            )}
+                {method === 'pagoMovil' && showPM && (
+                  <>
+                    {payments?.pagoMovil?.phone && <div>📱 {payments.pagoMovil.phone}</div>}
+                    {payments?.pagoMovil?.ci && <div>🪪 CI: {payments.pagoMovil.ci}</div>}
+                    {payments?.pagoMovil?.bank && <div>🏦 {payments.pagoMovil.bank}</div>}
+                    <div className="alt-note">{t('afterPayNotify')}</div>
+                  </>
+                )}
 
-            {method === 'zelle' && showZelle && (
-              <div className="alt-box">
-                {payments?.zelle?.email && <div>📧 {payments.zelle.email}</div>}
-                {payments?.zelle?.phone && <div>📞 {payments.zelle.phone}</div>}
-                <div className="alt-note">
-                  After sending your Zelle payment, press <strong>Pay</strong> to notify the organizer.
-                </div>
-              </div>
-            )}
+                {method === 'zelle' && showZelle && (
+                  <>
+                    {payments?.zelle?.email && <div>📧 {payments.zelle.email}</div>}
+                    {payments?.zelle?.phone && <div>📞 {payments.zelle.phone}</div>}
+                    <div className="alt-note">{t('afterPayNotify')}</div>
+                  </>
+                )}
 
-            {method === 'cash' && showCash && (
-              <div className="alt-box">
-                {payments?.cash?.note && <div>📝 {payments.cash.note}</div>}
-                <div className="alt-note">
-                  Press <strong>Pay</strong> to notify the organizer that you’ll pay in cash.
-                </div>
+                {method === 'cash' && showCash && (
+                  <>
+                    {payments?.cash?.note && <div>📝 {payments.cash.note}</div>}
+                    <div className="alt-note">{t('afterPayNotify')}</div>
+                  </>
+                )}
               </div>
             )}
 
             {(method === 'zelle' || method === 'pagoMovil') && (
               <div className="receipt-upload">
-                <label className="receipt-label">Attach receipt (image)</label>
+                <label className="receipt-label">{t('attachReceipt')}</label>
                 {!receiptFile ? (
                   <input type="file" accept="image/*" onChange={(e) => onReceiptPick(e.target.files?.[0])} />
                 ) : (
@@ -595,16 +670,19 @@ export default function RegisterPopup({
             disabled={!canPay || (needsReceipt && !receiptFile)}
             onClick={handleConfirm}
             style={submitting ? { pointerEvents: 'none', opacity: 0.6 } : {}}
+            type="button"
           >
-            {submitting ? (method === 'card' ? 'Processing…' : 'Sending…') : method === 'card' ? 'Pay with card' : `Pay (${methodPretty})`}
+            {submitting
+              ? method === 'card'
+                ? t('processing')
+                : t('sending')
+              : method === 'card'
+              ? t('payCard')
+              : `${t('pay')} (${methodPretty})`}
           </button>
 
           {method !== 'card' && (
-            <p className="pay-hint">
-              {needsReceipt
-                ? 'Please attach the receipt image before paying.'
-                : 'Manual methods notify the organizer. You’ll get your ticket by email after they confirm.'}
-            </p>
+            <p className="pay-hint">{needsReceipt ? t('needReceipt') : t('manualHint')}</p>
           )}
         </div>
       </div>

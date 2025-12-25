@@ -1,9 +1,55 @@
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState, useRef, useMemo } from 'react'
 import { useNavigate, useSearchParams, Link } from 'react-router-dom'
 import WebTicketCard from '../components/WebTicketCard'
 import './SuccessPage.css'
 
 const API = 'https://backendevent-etce.onrender.com'
+
+// ---- i18n
+const LANG_KEY = 'wknd_lang'
+const getInitialLang = () => {
+  const saved = localStorage.getItem(LANG_KEY)
+  if (saved === 'en' || saved === 'es') return saved
+  const nav = (navigator.language || '').toLowerCase()
+  return nav.startsWith('es') ? 'es' : 'en'
+}
+const DICT = {
+  en: {
+    paymentRequestSent: 'Payment request sent',
+    paymentSuccessful: 'Payment successful',
+    finalizing: 'Finalizing payment…',
+    notifiedOrganizer: 'We notified the organizer',
+    pendingTextA: 'about your',
+    pendingTextB: 'payment. You’ll receive an email with your ticket as soon as they confirm it.',
+    confirmationSentTo: 'Confirmation sent to',
+    checkingTicket: 'We’re checking for your ticket…',
+    openGmail: 'Open Gmail',
+    backToEvent: 'Back to event',
+    checkingForTicket: 'Checking for your ticket…',
+    couldntLoad: 'Couldn’t load your ticket. Check your email for the receipt + QR.',
+    pendingAppear: 'Your ticket will appear here after the organizer confirms your payment.',
+    couldntDisplay: 'We couldn’t display your ticket here yet.',
+    langBtn: 'ES',
+  },
+  es: {
+    paymentRequestSent: 'Solicitud de pago enviada',
+    paymentSuccessful: 'Pago exitoso',
+    finalizing: 'Finalizando pago…',
+    notifiedOrganizer: 'Notificamos al organizador',
+    pendingTextA: 'sobre tu pago con',
+    pendingTextB: '. Te llegará un email con tu ticket cuando confirmen.',
+    confirmationSentTo: 'Confirmación enviada a',
+    checkingTicket: 'Estamos buscando tu ticket…',
+    openGmail: 'Abrir Gmail',
+    backToEvent: 'Volver al evento',
+    checkingForTicket: 'Buscando tu ticket…',
+    couldntLoad: 'No pudimos cargar tu ticket. Revisa tu email para el recibo + QR.',
+    pendingAppear: 'Tu ticket aparecerá aquí cuando el organizador confirme el pago.',
+    couldntDisplay: 'Aún no podemos mostrar tu ticket aquí.',
+    langBtn: 'EN',
+  },
+}
+const useT = (lang) => (key) => DICT[lang]?.[key] ?? DICT.en[key] ?? key
 
 // Legacy fallback: newest “batch” if we truly have no identifiers.
 function pickNewestBatch(eventTickets) {
@@ -51,6 +97,22 @@ export default function SuccessPage() {
   const token = localStorage.getItem('token') || ''
   const email = localStorage.getItem('email') || ''
 
+  const [lang, setLang] = useState(getInitialLang())
+  const t = useMemo(() => useT(lang), [lang])
+
+  const toggleLang = () => {
+    const next = lang === 'en' ? 'es' : 'en'
+    setLang(next)
+    localStorage.setItem(LANG_KEY, next)
+    window.dispatchEvent(new Event('wknd:lang'))
+  }
+
+  useEffect(() => {
+    const onLang = () => setLang(getInitialLang())
+    window.addEventListener('wknd:lang', onLang)
+    return () => window.removeEventListener('wknd:lang', onLang)
+  }, [])
+
   // If pending was passed but since is missing, set it to now so we never show old tickets.
   useEffect(() => {
     if (pendingParam && !sinceParam) {
@@ -74,7 +136,7 @@ export default function SuccessPage() {
       : pendingParam === 'zelle'
       ? 'Zelle'
       : pendingParam === 'cash'
-      ? 'Cash'
+      ? (lang === 'es' ? 'Efectivo' : 'Cash')
       : ''
 
   const fetchForEvent = async () => {
@@ -88,9 +150,7 @@ export default function SuccessPage() {
   }
 
   const filterForThisCheckout = (list) => {
-    if (pi) {
-      return list.filter((t) => (t.paymentIntentId || '') === pi)
-    }
+    if (pi) return list.filter((t) => (t.paymentIntentId || '') === pi)
     if (pendingParam) {
       if (!since) return []
       const cutoff = since - 10_000
@@ -109,23 +169,20 @@ export default function SuccessPage() {
         const list = await fetchForEvent()
         setVisible(filterForThisCheckout(list))
       } catch {
-        setError('Couldn’t load your ticket. Check your email for the receipt + QR.')
+        setError(t('couldntLoad'))
       } finally {
         setLoading(false)
       }
     })()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [eventId, pi, since, token, email])
+  }, [eventId, pi, since, token, email, lang])
 
   // ✅ Exponential backoff polling (max attempts, stop early)
   const attemptsRef = useRef(0)
   const timeoutRef = useRef(null)
 
   useEffect(() => {
-    const needPoll =
-      (pi && visible.length === 0) ||
-      (pendingParam && since && visible.length === 0)
-
+    const needPoll = (pi && visible.length === 0) || (pendingParam && since && visible.length === 0)
     if (!needPoll) return
 
     let stopped = false
@@ -150,18 +207,12 @@ export default function SuccessPage() {
             next.delete('pi')
             setParams(next, { replace: true })
           }
-          return // ✅ stop polling once we have tickets
+          return
         }
-      } catch {
-        // ignore; keep trying within max attempts
-      }
+      } catch {}
 
-      if (attemptsRef.current >= 8) {
-        // ✅ stop after max attempts
-        return
-      }
-
-      const delay = Math.round(2000 * Math.pow(1.7, attemptsRef.current)) // exponential backoff
+      if (attemptsRef.current >= 8) return
+      const delay = Math.round(2000 * Math.pow(1.7, attemptsRef.current))
       timeoutRef.current = setTimeout(tick, delay)
     }
 
@@ -172,40 +223,42 @@ export default function SuccessPage() {
       if (timeoutRef.current) clearTimeout(timeoutRef.current)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pi, pendingParam, since, visible.length, showPendingBanner])
+  }, [pi, pendingParam, since, visible.length, showPendingBanner, lang])
 
   // If nothing to show and not pending, return after 10s
   useEffect(() => {
     if (showPendingBanner || loading || error || visible.length > 0) return
-    const t = setTimeout(() => navigate(`/events/${eventId}`), 10000)
-    return () => clearTimeout(t)
+    const tt = setTimeout(() => navigate(`/events/${eventId}`), 10000)
+    return () => clearTimeout(tt)
   }, [showPendingBanner, loading, error, visible.length, eventId, navigate])
 
   return (
     <div className="success-page">
       <div className="success-shell">
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 10 }}>
+          <button className="btn btn-xs btn-ghost" onClick={toggleLang} type="button">
+            {t('langBtn')}
+          </button>
+        </div>
+
         <div className="status-bar">
           <span className="status-dot" />
           <div className="status-text">
             <div className="status-strong">
-              {showPendingBanner
-                ? 'Payment request sent'
-                : visible.length > 0
-                ? 'Payment successful'
-                : 'Finalizing payment…'}
+              {showPendingBanner ? t('paymentRequestSent') : visible.length > 0 ? t('paymentSuccessful') : t('finalizing')}
             </div>
             <div className="status-sub">
               {showPendingBanner ? (
                 <>
-                  We <strong>notified the organizer</strong> about your {pendingPretty || 'payment'}.
-                  You’ll receive an email with your ticket as soon as they confirm it.
+                  {t('notifiedOrganizer')} <strong>{pendingPretty || (lang === 'es' ? 'tu pago' : 'your payment')}</strong>{' '}
+                  {lang === 'es' ? t('pendingTextB') : `${t('pendingTextA')} ${pendingPretty || 'payment'}. ${t('pendingTextB')}`}
                 </>
               ) : visible.length > 0 ? (
                 <>
-                  Confirmation sent to <span className="status-email">{email || 'your email'}</span>
+                  {t('confirmationSentTo')} <span className="status-email">{email || (lang === 'es' ? 'tu email' : 'your email')}</span>
                 </>
               ) : (
-                <>We’re checking for your ticket…</>
+                <>{t('checkingTicket')}</>
               )}
             </div>
           </div>
@@ -216,27 +269,25 @@ export default function SuccessPage() {
               target="_blank"
               rel="noreferrer"
             >
-              Open Gmail
+              {t('openGmail')}
             </a>
             <Link className="btn btn-xs btn-accent" to={`/events/${eventId}`}>
-              Back to event
+              {t('backToEvent')}
             </Link>
           </div>
         </div>
 
         <div className="tickets-grid">
-          {loading && <p className="hint">Checking for your ticket…</p>}
+          {loading && <p className="hint">{t('checkingForTicket')}</p>}
           {error && <p className="hint hint-error">{error}</p>}
           {!loading && !error && visible.length === 0 && (
             <p className="hint">
-              {showPendingBanner
-                ? 'Your ticket will appear here after the organizer confirms your payment.'
-                : 'We couldn’t display your ticket here yet.'}
+              {showPendingBanner ? t('pendingAppear') : t('couldntDisplay')}
             </p>
           )}
 
-          {visible.map((t) => (
-            <WebTicketCard key={t.id} ticket={t} apiBase={API} token={token} />
+          {visible.map((tt) => (
+            <WebTicketCard key={tt.id} ticket={tt} apiBase={API} token={token} />
           ))}
         </div>
       </div>
