@@ -667,9 +667,10 @@ export default function EventDetailPage() {
       <div className="event-loading">
         <div className="loader-card">
           <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-            <button className="btn-secondary" onClick={toggleLang} type="button">
-              {lang === 'en' ? 'ES' : 'EN'}
-            </button>
+          <button className="btn-secondary lang-toggle" onClick={toggleLang} type="button">
+  🌐 Language · {lang === 'en' ? 'EN' : 'ES'}
+</button>
+
           </div>
 
           <div className="loader-top">

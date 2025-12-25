@@ -147,6 +147,15 @@ body {
   margin: 0;
 }
 
+.lang-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+}
+
+
 .loader-sub {
   margin-top: 6px;
   font-size: 14px;
