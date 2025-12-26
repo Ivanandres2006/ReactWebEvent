@@ -317,7 +317,7 @@ export default function EventDetailPage() {
   useEffect(() => {
     loadEvent()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id, lang])
+  }, [id])
 
   // ✅ Share helpers (works on iOS + desktop)
   const getShareUrl = () => {
@@ -713,9 +713,7 @@ export default function EventDetailPage() {
       <div className="event-error">
         <div className="loader-card">
           <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-            <button className="btn-secondary" onClick={toggleLang} type="button">
-              {lang === 'en' ? 'ES' : 'EN'}
-            </button>
+            <LanguageButton lang={lang} onToggle={toggleLang} size="small" />
           </div>
 
           <div className="loader-title">{t('couldntLoadTitle')}</div>
@@ -811,9 +809,7 @@ export default function EventDetailPage() {
       <div className="event-content">
         {/* Language toggle */}
         <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
-          <button className="btn-secondary" onClick={toggleLang} type="button">
-            {lang === 'en' ? 'ES' : 'EN'}
-          </button>
+          <LanguageButton lang={lang} onToggle={toggleLang} />
         </div>
 
         <h1 className="event-title">{event?.title}</h1>
