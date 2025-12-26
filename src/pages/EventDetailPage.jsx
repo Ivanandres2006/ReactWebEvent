@@ -146,6 +146,7 @@ function formatDate(isoString, lang) {
   })
 }
 
+// Small inline notice so you don't need extra files
 function Notice({ type = 'error', message, onRetry, onDismiss, dismissLabel = 'Dismiss', retryLabel = 'Retry' }) {
   if (!message) return null
   const cls = type === 'error' ? 'notice notice-error' : type === 'info' ? 'notice notice-info' : 'notice'
@@ -191,6 +192,7 @@ export default function EventDetailPage() {
   const rawRef = searchParams.get('ref')
   const refCode = rawRef ? decodeURIComponent(rawRef) : null
 
+  // ✅ language
   const [lang, setLang] = useState(getInitialLang())
   const t = useMemo(() => useT(lang), [lang])
 
@@ -202,6 +204,8 @@ export default function EventDetailPage() {
   }
 
   const [event, setEvent] = useState(null)
+
+  // ✅ resilient event load states
   const [eventLoading, setEventLoading] = useState(true)
   const [eventErrMsg, setEventErrMsg] = useState(null)
 
@@ -218,48 +222,50 @@ export default function EventDetailPage() {
 
   const [checkingOut, setCheckingOut] = useState(false)
   const clickedOnceRef = useRef(false)
+
+  // ✅ resilient checkout error UI (instead of only alert)
   const [checkoutErrMsg, setCheckoutErrMsg] = useState(null)
 
   const [waitlistStatus, setWaitlistStatus] = useState(null)
   const [waitlistModal, setWaitlistModal] = useState(false)
   const [waitlistBusy, setWaitlistBusy] = useState(false)
 
+  // ✅ Share UX
   const [shareMsg, setShareMsg] = useState(null)
   const [shareBusy, setShareBusy] = useState(false)
 
   const token = getAccessToken()
   const isLoggedIn = !!token
   const requiresWaitlist = !!event?.listOnly
+  const showAppleWallet = useMemo(() => canShowAppleWallet() && isLoggedIn, [isLoggedIn])
 
-  // ✅ THE IMPORTANT PART:
-  // Cedula required ONLY for Venezuela events
-  const requireCedula = useMemo(() => {
-    return String(event?.country || '').trim().toLowerCase() === 'venezuela'
-  }, [event?.country])
-
+  // Keep in sync if another page toggles language
   useEffect(() => {
     const onLang = () => setLang(getInitialLang())
     window.addEventListener('wknd:lang', onLang)
     return () => window.removeEventListener('wknd:lang', onLang)
   }, [])
 
+  // Mark iOS Safari on <html> so CSS can disable blur/backdrop
   useEffect(() => {
     const ua = navigator.userAgent || ''
     const isIOSSafari = /iP(hone|od|ad)/.test(ua) && /WebKit/.test(ua) && !/CriOS|FxiOS/.test(ua)
     if (isIOSSafari) document.documentElement.classList.add('ios-safari')
   }, [])
 
+  // Save referral
   useEffect(() => {
     if (refCode) localStorage.setItem('wknd_ref', refCode)
   }, [refCode])
 
+  // Body lock whenever any modal is open (auth, waitlist, register, stripe)
   useEffect(() => {
     const open = showAuth || waitlistModal || showPopup || !!clientSecret
     document.body.classList.toggle('body-no-scroll', open)
     return () => document.body.classList.remove('body-no-scroll')
   }, [showAuth, waitlistModal, showPopup, clientSecret])
 
-  // Load user info (store email + cedula)
+  // ✅ Load user info (store email + cedula)
   useEffect(() => {
     if (!isLoggedIn) return
     fetchWithAuth(`${API}/user/me`)
@@ -276,6 +282,8 @@ export default function EventDetailPage() {
           setEmail(d.email)
           localStorage.setItem('email', d.email)
           if (d?.fullName) localStorage.setItem('fullName', d.fullName)
+
+          // ✅ NEW:
           if (d?.cedula) localStorage.setItem('cedula', String(d.cedula))
         } else {
           setShowAuth(true)
@@ -284,6 +292,7 @@ export default function EventDetailPage() {
       .catch(() => {})
   }, [isLoggedIn])
 
+  // ✅ Load event (public) with loading/error/retry
   const loadEvent = async () => {
     if (!id) return
     setEventLoading(true)
@@ -307,6 +316,7 @@ export default function EventDetailPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id])
 
+  // ✅ Share helpers (works on iOS + desktop)
   const getShareUrl = () => {
     const origin = window.location.origin
     const path = `/#/event/${id}`
@@ -362,6 +372,7 @@ export default function EventDetailPage() {
     }
   }
 
+  // Load waitlist status (if listOnly + logged in)
   useEffect(() => {
     if (!event?.listOnly || !isLoggedIn) return
     ;(async () => {
@@ -388,6 +399,7 @@ export default function EventDetailPage() {
     })()
   }, [event?.listOnly, isLoggedIn, id])
 
+  // Load tiers when popup opens (auth first)
   useEffect(() => {
     if (!showPopup || !id) return
     const lsKey = `lastTier:${id}`
@@ -431,10 +443,47 @@ export default function EventDetailPage() {
         setTiersLoading(false)
       }
     }
-
     load()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showPopup, id, lang])
+
+  // ---- VES rate in event
+  const vesRate =
+    event?.vesRate ??
+    event?.ves_rate ??
+    event?.vesPerUsd ??
+    event?.ves_per_usd ??
+    event?.fxVesPerUsd ??
+    event?.exchangeRateVes ??
+    event?.exchange_rate_ves ??
+    null
+
+  const popupPayments = event
+    ? {
+        country: event.country || '',
+        currency: event.currency || '',
+        zelle: {
+          enabled: !!(event.zelleEmail || event.zellePhone),
+          email: event.zelleEmail || '',
+          phone: event.zellePhone || '',
+        },
+        pagoMovil: {
+          enabled:
+            (String(event.country || '').toLowerCase() === 'venezuela' ||
+              String(event.currency || '').toUpperCase() === 'VES') &&
+            !!event.allowPagoMovil,
+          phone: event.pagoMovilPhone || '',
+          ci: event.pagoMovilCi || '',
+          bank: event.pagoMovilBank || '',
+          rate: typeof vesRate === 'number' ? vesRate : undefined,
+          country: event.country || '',
+        },
+        cash: {
+          enabled: !!event.allowCash,
+          note: event.cashNote || '',
+        },
+      }
+    : null
 
   async function uploadProof(ticketId, file, token) {
     const fd = new FormData()
@@ -451,6 +500,7 @@ export default function EventDetailPage() {
     }
   }
 
+  // ---- Waitlist actions
   const openWaitlistModal = () => setWaitlistModal(true)
   const closeWaitlistModal = () => setWaitlistModal(false)
 
@@ -499,6 +549,7 @@ export default function EventDetailPage() {
     }
   }
 
+  // ✅ Handle checkout
   const handleBuy = async (method = 'card', extras = {}) => {
     if (checkingOut || clickedOnceRef.current) return
     clickedOnceRef.current = true
@@ -537,11 +588,9 @@ export default function EventDetailPage() {
 
       if (extras?.discountCode) body.discountCode = String(extras.discountCode).trim().toUpperCase()
 
-      // ✅ BEST UX: only attach cedula if Venezuela requires it
-      if (requireCedula) {
-        const cedula = String(extras?.cedula || localStorage.getItem('cedula') || '').trim()
-        if (cedula) body.cedula = cedula
-      }
+      // ✅ NEW: send cedula
+      const cedula = (extras?.cedula || localStorage.getItem('cedula') || '').trim()
+      if (cedula) body.cedula = cedula
 
       const res = await fetchWithAuth(`${API}/api/tickets/checkout`, {
         method: 'POST',
@@ -710,6 +759,16 @@ export default function EventDetailPage() {
     setShowPopup(true)
   }
 
+  const vesRateInEvent =
+    event?.vesRate ??
+    event?.ves_rate ??
+    event?.vesPerUsd ??
+    event?.ves_per_usd ??
+    event?.fxVesPerUsd ??
+    event?.exchangeRateVes ??
+    event?.exchange_rate_ves ??
+    null
+
   const popupPayments2 = event
     ? {
         country: event.country || '',
@@ -727,6 +786,7 @@ export default function EventDetailPage() {
           phone: event.pagoMovilPhone || '',
           ci: event.pagoMovilCi || '',
           bank: event.pagoMovilBank || '',
+          rate: typeof vesRateInEvent === 'number' ? vesRateInEvent : undefined,
           country: event.country || '',
         },
         cash: { enabled: !!event.allowCash, note: event.cashNote || '' },
@@ -882,8 +942,8 @@ export default function EventDetailPage() {
           submitting={checkingOut}
           payments={popupPayments2}
 
-          // ✅ FIX: only Venezuela shows cedula
-          requireCedula={requireCedula}
+          // ✅ NEW: backend requires event.requireCedula
+          requireCedula={!!event?.requireCedula}
 
           onClose={() => {
             setShowPopup(false)
