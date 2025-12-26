@@ -149,12 +149,7 @@ function formatDate(isoString, lang) {
 // Small inline notice so you don't need extra files
 function Notice({ type = 'error', message, onRetry, onDismiss, dismissLabel = 'Dismiss', retryLabel = 'Retry' }) {
   if (!message) return null
-  const cls =
-    type === 'error'
-      ? 'notice notice-error'
-      : type === 'info'
-      ? 'notice notice-info'
-      : 'notice'
+  const cls = type === 'error' ? 'notice notice-error' : type === 'info' ? 'notice notice-info' : 'notice'
   return (
     <div className={cls} style={{ margin: '12px 0' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
@@ -190,7 +185,6 @@ function LanguageButton({ lang, onToggle, size = 'normal' }) {
     </button>
   )
 }
-
 
 export default function EventDetailPage() {
   const { id } = useParams()
@@ -271,7 +265,7 @@ export default function EventDetailPage() {
     return () => document.body.classList.remove('body-no-scroll')
   }, [showAuth, waitlistModal, showPopup, clientSecret])
 
-  // Load user info
+  // ✅ Load user info (store email + cedula)
   useEffect(() => {
     if (!isLoggedIn) return
     fetchWithAuth(`${API}/user/me`)
@@ -288,6 +282,9 @@ export default function EventDetailPage() {
           setEmail(d.email)
           localStorage.setItem('email', d.email)
           if (d?.fullName) localStorage.setItem('fullName', d.fullName)
+
+          // ✅ NEW:
+          if (d?.cedula) localStorage.setItem('cedula', String(d.cedula))
         } else {
           setShowAuth(true)
         }
@@ -331,8 +328,12 @@ export default function EventDetailPage() {
     const url = getShareUrl()
     const title = event?.title ? `WKND — ${event.title}` : 'WKND Event'
     const text = event?.title
-      ? (lang === 'es' ? `Mira este evento: ${event.title}` : `Check out: ${event.title}`)
-      : (lang === 'es' ? 'Mira este evento de WKND' : 'Check out this WKND event')
+      ? lang === 'es'
+        ? `Mira este evento: ${event.title}`
+        : `Check out: ${event.title}`
+      : lang === 'es'
+      ? 'Mira este evento de WKND'
+      : 'Check out this WKND event'
 
     setShareMsg(null)
     setShareBusy(true)
@@ -457,8 +458,7 @@ export default function EventDetailPage() {
     event?.exchange_rate_ves ??
     null
 
-  // Build payment options for popup
-  const payments = event
+  const popupPayments = event
     ? {
         country: event.country || '',
         currency: event.currency || '',
@@ -549,7 +549,7 @@ export default function EventDetailPage() {
     }
   }
 
-  // Handle checkout
+  // ✅ Handle checkout
   const handleBuy = async (method = 'card', extras = {}) => {
     if (checkingOut || clickedOnceRef.current) return
     clickedOnceRef.current = true
@@ -587,6 +587,10 @@ export default function EventDetailPage() {
       }
 
       if (extras?.discountCode) body.discountCode = String(extras.discountCode).trim().toUpperCase()
+
+      // ✅ NEW: send cedula
+      const cedula = (extras?.cedula || localStorage.getItem('cedula') || '').trim()
+      if (cedula) body.cedula = cedula
 
       const res = await fetchWithAuth(`${API}/api/tickets/checkout`, {
         method: 'POST',
@@ -677,7 +681,6 @@ export default function EventDetailPage() {
     }
   }
 
-  // ✅ Robust early UI: loading + error + retry
   if (eventLoading) {
     return (
       <div className="event-loading">
@@ -766,7 +769,7 @@ export default function EventDetailPage() {
     event?.exchange_rate_ves ??
     null
 
-  const popupPayments = event
+  const popupPayments2 = event
     ? {
         country: event.country || '',
         currency: event.currency || '',
@@ -807,7 +810,6 @@ export default function EventDetailPage() {
       </div>
 
       <div className="event-content">
-        {/* Language toggle */}
         <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
           <LanguageButton lang={lang} onToggle={toggleLang} />
         </div>
@@ -816,12 +818,7 @@ export default function EventDetailPage() {
         <p className="event-date">📅 {event?.dateTime ? formatDate(event.dateTime, lang) : ''}</p>
         <p className="event-location">📍 {event?.location || ''}</p>
 
-        <Notice
-          type="error"
-          message={checkoutErrMsg}
-          onDismiss={() => setCheckoutErrMsg(null)}
-          dismissLabel={t('dismiss')}
-        />
+        <Notice type="error" message={checkoutErrMsg} onDismiss={() => setCheckoutErrMsg(null)} dismissLabel={t('dismiss')} />
         <Notice type="info" message={shareMsg} onDismiss={() => setShareMsg(null)} dismissLabel={t('dismiss')} />
 
         {requiresWaitlist && (
@@ -851,12 +848,7 @@ export default function EventDetailPage() {
           <h3>{t('location')}</h3>
           {hasLatLng ? (
             <div style={{ height: '300px', borderRadius: '16px', overflow: 'hidden', marginTop: '12px' }}>
-              <MapContainer
-                center={[event.latitude, event.longitude]}
-                zoom={15}
-                scrollWheelZoom={false}
-                style={{ height: '100%', width: '100%' }}
-              >
+              <MapContainer center={[event.latitude, event.longitude]} zoom={15} scrollWheelZoom={false} style={{ height: '100%', width: '100%' }}>
                 <TileLayer
                   attribution='&copy; <a href="https://www.openstreetmap.org/">OpenStreetMap</a> contributors'
                   url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
@@ -882,14 +874,7 @@ export default function EventDetailPage() {
           </div>
 
           <div className="links">
-            <a
-              className="footer-link"
-              href="https://www.instagram.com/wknd.app/"
-              target="_blank"
-              rel="noreferrer"
-              aria-label="Instagram"
-              title="Instagram"
-            >
+            <a className="footer-link" href="https://www.instagram.com/wknd.app/" target="_blank" rel="noreferrer" aria-label="Instagram" title="Instagram">
               <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
                 <path
                   fill="currentColor"
@@ -955,7 +940,11 @@ export default function EventDetailPage() {
           selectedTierId={selectedTierId}
           quantity={quantity}
           submitting={checkingOut}
-          payments={popupPayments}
+          payments={popupPayments2}
+
+          // ✅ NEW: backend requires event.requireCedula
+          requireCedula={!!event?.requireCedula}
+
           onClose={() => {
             setShowPopup(false)
             setSelectedTierId(null)
@@ -981,10 +970,7 @@ export default function EventDetailPage() {
                 clientSecret={clientSecret}
                 email={email}
                 onSuccess={async (paymentIntentId) => {
-                  await fetchWithAuth(
-                    `${API}/api/tickets/confirm?paymentIntentId=${encodeURIComponent(paymentIntentId)}`,
-                    { method: 'POST' }
-                  )
+                  await fetchWithAuth(`${API}/api/tickets/confirm?paymentIntentId=${encodeURIComponent(paymentIntentId)}`, { method: 'POST' })
                   window.location.href = `/#/success?eventId=${id}&pi=${encodeURIComponent(paymentIntentId)}`
                 }}
               />

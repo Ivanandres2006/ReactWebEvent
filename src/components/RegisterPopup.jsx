@@ -41,6 +41,11 @@ const DICT = {
     newSubtotal: 'New subtotal',
     dismiss: 'Dismiss',
     feeFail: 'We couldn’t calculate fees right now. You can still continue — totals may show at checkout.',
+
+    // ✅ NEW
+    cedulaLabel: 'ID / Cédula',
+    cedulaPlaceholder: 'Enter your ID (required)',
+    cedulaRequired: 'Please enter your ID (cédula) to continue.',
   },
   es: {
     selectTicket: 'Selecciona tu ticket',
@@ -77,6 +82,11 @@ const DICT = {
     newSubtotal: 'Nuevo subtotal',
     dismiss: 'Cerrar',
     feeFail: 'No pudimos calcular los cargos. Igual puedes continuar — el total puede aparecer al pagar.',
+
+    // ✅ NEW
+    cedulaLabel: 'Cédula / ID',
+    cedulaPlaceholder: 'Escribe tu cédula (obligatorio)',
+    cedulaRequired: 'Ingresa tu cédula para continuar.',
   },
 }
 const useT = (lang) => (key) => DICT[lang]?.[key] ?? DICT.en[key] ?? key
@@ -115,6 +125,10 @@ export default function RegisterPopup({
   quantity,
   submitting = false,
   payments = null,
+
+  // ✅ NEW
+  requireCedula = false,
+
   onClose,
   onSelectTier,
   onQuantityChange,
@@ -141,11 +155,23 @@ export default function RegisterPopup({
   const [bcvSource, setBcvSource] = useState('')
 
   const [token, setToken] = useState(getAccessToken())
+
+  // ✅ NEW: cedula state (prefill from localStorage)
+  const [cedula, setCedula] = useState(() => localStorage.getItem('cedula') || '')
+  const [cedulaError, setCedulaError] = useState('')
+
   useEffect(() => {
     const onAuth = () => setToken(getAccessToken())
     window.addEventListener('auth:login', onAuth)
     return () => window.removeEventListener('auth:login', onAuth)
   }, [])
+
+  // ✅ keep cedula persisted
+  useEffect(() => {
+    try {
+      localStorage.setItem('cedula', String(cedula || ''))
+    } catch {}
+  }, [cedula])
 
   useEffect(() => {
     return () => {
@@ -355,11 +381,28 @@ export default function RegisterPopup({
   const handleConfirm = () => {
     if (!canPay) return
     setUiErr(null)
+
+    // ✅ NEW: cedula required validation
+    if (requireCedula) {
+      const clean = String(cedula || '').trim()
+      if (!clean) {
+        setCedulaError(t('cedulaRequired'))
+        return
+      }
+    }
+
     if (needsReceipt && !receiptFile) {
       setReceiptError(t('needReceipt'))
       return
     }
-    onPay?.(method, { discountCode: discountCode.trim() || null, receiptFile: receiptFile || null })
+
+    onPay?.(method, {
+      discountCode: discountCode.trim() || null,
+      receiptFile: receiptFile || null,
+
+      // ✅ NEW:
+      cedula: String(cedula || '').trim() || null,
+    })
   }
 
   useEffect(() => {
@@ -435,25 +478,35 @@ export default function RegisterPopup({
       ) {
         rows.push({ label: `${qtyText} (${t('subtotal')})`, value: fmtCents(fee.originalSubtotalCents), strong: false })
         rows.push({
-          label: `${t('discountLabel')}${(lastAppliedCode || discountCode) ? ` (${(lastAppliedCode || discountCode).toUpperCase()})` : ''}`,
+          label: `${t('discountLabel')}${
+            lastAppliedCode || discountCode ? ` (${(lastAppliedCode || discountCode).toUpperCase()})` : ''
+          }`,
           value: '− ' + fmtCents(fee.discountCentsApplied),
           strong: false,
         })
         rows.push({ label: t('newSubtotal'), value: fmtCents(fee.subtotalCents), strong: false })
       } else {
-        if (typeof fee.subtotalCents === 'number') rows.push({ label: qtyText, value: fmtCents(fee.subtotalCents), strong: false })
+        if (typeof fee.subtotalCents === 'number')
+          rows.push({ label: qtyText, value: fmtCents(fee.subtotalCents), strong: false })
       }
 
-      if (typeof fee.platformFeeCents === 'number' && fee.platformFeeCents > 0) rows.push({ label: t('platformFee'), value: fmtCents(fee.platformFeeCents), strong: false })
-      if (method === 'card' && typeof fee.stripeFeeCents === 'number' && fee.stripeFeeCents > 0) rows.push({ label: t('stripeFee'), value: fmtCents(fee.stripeFeeCents), strong: false })
-      if (typeof fee.serviceFeeCents === 'number' && fee.serviceFeeCents > 0) rows.push({ label: t('serviceFee'), value: fmtCents(fee.serviceFeeCents), strong: false })
+      if (typeof fee.platformFeeCents === 'number' && fee.platformFeeCents > 0)
+        rows.push({ label: t('platformFee'), value: fmtCents(fee.platformFeeCents), strong: false })
+      if (method === 'card' && typeof fee.stripeFeeCents === 'number' && fee.stripeFeeCents > 0)
+        rows.push({ label: t('stripeFee'), value: fmtCents(fee.stripeFeeCents), strong: false })
+      if (typeof fee.serviceFeeCents === 'number' && fee.serviceFeeCents > 0)
+        rows.push({ label: t('serviceFee'), value: fmtCents(fee.serviceFeeCents), strong: false })
 
       rows.push({ label: t('total'), value: fmtCents(fee.totalCents), strong: true })
       return { rows, isEstimate: false }
     }
 
     const subtotalCents = Math.round(priceUSD * 100 * quantity)
-    rows.push({ label: selectedTier ? `${selectedTier.name} ×${quantity}` : t('subtotal'), value: fmtCents(subtotalCents), strong: false })
+    rows.push({
+      label: selectedTier ? `${selectedTier.name} ×${quantity}` : t('subtotal'),
+      value: fmtCents(subtotalCents),
+      strong: false,
+    })
     rows.push({ label: t('totalEst'), value: fmtCents(subtotalCents), strong: true })
     return { rows, isEstimate: true }
   }, [fee, selectedTier, quantity, method, vesRate, lastAppliedCode, discountCode, t])
@@ -491,7 +544,13 @@ export default function RegisterPopup({
         {loading ? (
           <div className="empty-tiers">{t('loadingTiers')}</div>
         ) : error ? (
-          <div className="empty-tiers">{typeof error === 'string' ? error : (lang === 'es' ? 'No se pudieron cargar los tickets.' : 'Couldn’t load tiers. Try again.')}</div>
+          <div className="empty-tiers">
+            {typeof error === 'string'
+              ? error
+              : lang === 'es'
+              ? 'No se pudieron cargar los tickets.'
+              : 'Couldn’t load tiers. Try again.'}
+          </div>
         ) : tiers?.length ? (
           tiers
             .slice()
@@ -503,7 +562,9 @@ export default function RegisterPopup({
               return (
                 <div
                   key={tier.id}
-                  className={['ticket-tier', 'rich', selected ? 'selected' : '', unavailable ? 'disabled' : ''].join(' ').trim()}
+                  className={['ticket-tier', 'rich', selected ? 'selected' : '', unavailable ? 'disabled' : '']
+                    .join(' ')
+                    .trim()}
                   onClick={() => {
                     if (!unavailable) onSelectTier(tier.id)
                   }}
@@ -512,7 +573,13 @@ export default function RegisterPopup({
                     <div className="tier-name">{tier.name}</div>
                     <div className="tier-price">{fmtUnitPrice(tier.price)}</div>
                   </div>
-                  {desc.length > 0 && <ul className="tier-desc">{desc.map((li, i) => <li key={i}>{li}</li>)}</ul>}
+                  {desc.length > 0 && (
+                    <ul className="tier-desc">
+                      {desc.map((li, i) => (
+                        <li key={i}>{li}</li>
+                      ))}
+                    </ul>
+                  )}
                   <div className="tier-meta">
                     <span className="chip">{availabilityText(tier)}</span>
                     {hasWindow(tier) && <span className="chip light">🕒 {fmtWindow(tier)}</span>}
@@ -539,6 +606,23 @@ export default function RegisterPopup({
             }}
           />
         </div>
+
+        {/* ✅ NEW: Cedula input */}
+        {requireCedula && (
+          <div className="ticket-quantity" style={{ marginTop: 8 }}>
+            <label>{t('cedulaLabel')}</label>
+            <input
+              type="text"
+              value={cedula}
+              placeholder={t('cedulaPlaceholder')}
+              onChange={(e) => {
+                setCedulaError('')
+                setCedula(e.target.value)
+              }}
+            />
+            {!!cedulaError && <div className="error-text">{cedulaError}</div>}
+          </div>
+        )}
 
         <div className="ticket-quantity" style={{ marginTop: 8 }}>
           <label>{t('discount')}</label>
@@ -594,22 +678,38 @@ export default function RegisterPopup({
 
         <div className="method-tabs">
           {showCard && (
-            <button className={`tab ${method === 'card' ? 'active' : ''}`} onClick={() => setMethod('card')} type="button">
+            <button
+              className={`tab ${method === 'card' ? 'active' : ''}`}
+              onClick={() => setMethod('card')}
+              type="button"
+            >
               {t('card')}
             </button>
           )}
           {showPM && (
-            <button className={`tab ${method === 'pagoMovil' ? 'active' : ''}`} onClick={() => setMethod('pagoMovil')} type="button">
+            <button
+              className={`tab ${method === 'pagoMovil' ? 'active' : ''}`}
+              onClick={() => setMethod('pagoMovil')}
+              type="button"
+            >
               Pago Móvil
             </button>
           )}
           {showZelle && (
-            <button className={`tab ${method === 'zelle' ? 'active' : ''}`} onClick={() => setMethod('zelle')} type="button">
+            <button
+              className={`tab ${method === 'zelle' ? 'active' : ''}`}
+              onClick={() => setMethod('zelle')}
+              type="button"
+            >
               Zelle
             </button>
           )}
           {showCash && (
-            <button className={`tab ${method === 'cash' ? 'active' : ''}`} onClick={() => setMethod('cash')} type="button">
+            <button
+              className={`tab ${method === 'cash' ? 'active' : ''}`}
+              onClick={() => setMethod('cash')}
+              type="button"
+            >
               {t('cash')}
             </button>
           )}
@@ -681,9 +781,7 @@ export default function RegisterPopup({
               : `${t('pay')} (${methodPretty})`}
           </button>
 
-          {method !== 'card' && (
-            <p className="pay-hint">{needsReceipt ? t('needReceipt') : t('manualHint')}</p>
-          )}
+          {method !== 'card' && <p className="pay-hint">{needsReceipt ? t('needReceipt') : t('manualHint')}</p>}
         </div>
       </div>
     </div>
