@@ -176,6 +176,22 @@ function Notice({ type = 'error', message, onRetry, onDismiss, dismissLabel = 'D
   )
 }
 
+function LanguageButton({ lang, onToggle, size = 'normal' }) {
+  const label = `🌐 Language · ${lang === 'en' ? 'EN' : 'ES'}`
+  return (
+    <button
+      className={`btn-secondary lang-toggle ${size === 'small' ? 'lang-toggle--sm' : ''}`}
+      onClick={onToggle}
+      type="button"
+      aria-label="Change language"
+      title="Change language"
+    >
+      {label}
+    </button>
+  )
+}
+
+
 export default function EventDetailPage() {
   const { id } = useParams()
   const [searchParams] = useSearchParams()
@@ -667,10 +683,7 @@ export default function EventDetailPage() {
       <div className="event-loading">
         <div className="loader-card">
           <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-          <button className="btn-secondary lang-toggle" onClick={toggleLang} type="button">
-  🌐 Language · {lang === 'en' ? 'EN' : 'ES'}
-</button>
-
+            <LanguageButton lang={lang} onToggle={toggleLang} size="small" />
           </div>
 
           <div className="loader-top">

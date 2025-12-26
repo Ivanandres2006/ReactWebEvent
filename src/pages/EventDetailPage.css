@@ -155,6 +155,19 @@ body {
   letter-spacing: 0.3px;
 }
 
+.lang-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+}
+
+.lang-toggle--sm {
+  padding: 8px 12px;
+  font-size: 13px;
+}
+
 
 .loader-sub {
   margin-top: 6px;
