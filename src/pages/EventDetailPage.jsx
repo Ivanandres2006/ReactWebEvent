@@ -187,7 +187,10 @@ function LanguageButton({ lang, onToggle, size = 'normal' }) {
 }
 
 export default function EventDetailPage() {
-  const { id } = useParams()
+  // ✅ FIX: support ANY param name (id / eventId / eventID)
+  const params = useParams()
+  const id = params.id ?? params.eventId ?? params.eventID
+
   const [searchParams] = useSearchParams()
   const rawRef = searchParams.get('ref')
   const refCode = rawRef ? decodeURIComponent(rawRef) : null
@@ -236,6 +239,13 @@ export default function EventDetailPage() {
 
   const token = getAccessToken()
   const isLoggedIn = !!token
+
+  // ✅ IMPORTANT: compute “cedula required” EXACTLY like you want:
+  // Only for Venezuela events (country == "Venezuela")
+  const requireCedula = useMemo(() => {
+    return String(event?.country || '').trim().toLowerCase() === 'venezuela'
+  }, [event?.country])
+
   const requiresWaitlist = !!event?.listOnly
   const showAppleWallet = useMemo(() => canShowAppleWallet() && isLoggedIn, [isLoggedIn])
 
@@ -283,7 +293,7 @@ export default function EventDetailPage() {
           localStorage.setItem('email', d.email)
           if (d?.fullName) localStorage.setItem('fullName', d.fullName)
 
-          // ✅ NEW:
+          // store cedula if available
           if (d?.cedula) localStorage.setItem('cedula', String(d.cedula))
         } else {
           setShowAuth(true)
@@ -294,10 +304,17 @@ export default function EventDetailPage() {
 
   // ✅ Load event (public) with loading/error/retry
   const loadEvent = async () => {
-    if (!id) return
+    if (!id) {
+      setEventLoading(false)
+      setEventErrMsg(lang === 'es' ? 'ID de evento inválido (ruta).' : 'Invalid event id (route).')
+      return
+    }
+
     setEventLoading(true)
     setEventErrMsg(null)
+
     try {
+      // NOTE: If your backend route is /api/events/:id, change this to `${API}/api/events/${id}`
       const res = await fetch(`${API}/events/${id}`)
       if (!res.ok) throw new Error(`Failed to fetch event: ${res.status}`)
       const data = await res.json()
@@ -314,7 +331,7 @@ export default function EventDetailPage() {
   useEffect(() => {
     loadEvent()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id])
+  }, [id, lang])
 
   // ✅ Share helpers (works on iOS + desktop)
   const getShareUrl = () => {
@@ -578,7 +595,7 @@ export default function EventDetailPage() {
 
       const storedRef = localStorage.getItem('wknd_ref')
       const body = {
-        eventId: parseInt(id),
+        eventId: parseInt(id, 10),
         ticketTierId: selectedTierId,
         quantity,
         email,
@@ -588,9 +605,11 @@ export default function EventDetailPage() {
 
       if (extras?.discountCode) body.discountCode = String(extras.discountCode).trim().toUpperCase()
 
-      // ✅ NEW: send cedula
-      const cedula = (extras?.cedula || localStorage.getItem('cedula') || '').trim()
-      if (cedula) body.cedula = cedula
+      // ✅ FIX: only include cedula for Venezuela events
+      if (requireCedula) {
+        const cedula = String(extras?.cedula || localStorage.getItem('cedula') || '').trim()
+        if (cedula) body.cedula = cedula
+      }
 
       const res = await fetchWithAuth(`${API}/api/tickets/checkout`, {
         method: 'POST',
@@ -821,6 +840,12 @@ export default function EventDetailPage() {
         <Notice type="error" message={checkoutErrMsg} onDismiss={() => setCheckoutErrMsg(null)} dismissLabel={t('dismiss')} />
         <Notice type="info" message={shareMsg} onDismiss={() => setShareMsg(null)} dismissLabel={t('dismiss')} />
 
+        {requireCedula && (
+          <div className="waitlist-banner" style={{ marginTop: 8 }}>
+            <span className="chip info">{lang === 'es' ? '🇻🇪 Se requiere cédula para registrarte.' : '🇻🇪 Cedula is required to register.'}</span>
+          </div>
+        )}
+
         {requiresWaitlist && (
           <div className="waitlist-banner">
             {waitlistStatus === 'approved' && <span className="chip ok">✅ {t('approved')}</span>}
@@ -941,10 +966,8 @@ export default function EventDetailPage() {
           quantity={quantity}
           submitting={checkingOut}
           payments={popupPayments2}
-
-          // ✅ NEW: backend requires event.requireCedula
-          requireCedula={!!event?.requireCedula}
-
+          // ✅ Venezuela only
+          requireCedula={requireCedula}
           onClose={() => {
             setShowPopup(false)
             setSelectedTierId(null)
